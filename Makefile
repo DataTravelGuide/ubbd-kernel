@@ -39,6 +39,20 @@ obj-m := ubbd.o
 ubbd-y := ubbd_main.o ubbd_req.o ubbd_nl.o ubbd_uio.o ubbd_dev.o ubbd_debugfs.o
 $(obj)/ubbd.o: $(UBBDCONF_HEADER)
 
+mod:
+	rm -rf $(UBBDCONF_HEADER)
+	$(MAKE) $(UBBDCONF_HEADER)
+	UBBD_KMODS_DIR=$(PWD) $(MAKE) -C $(KERNEL_TREE) M=$(PWD) modules
+
+install:
+	install etc/ld.so.conf.d/ubbd.conf $(DESTDIR)/etc/ld.so.conf.d/ubbd.conf
+	$(MAKE) -C $(KERNEL_TREE) M=$(PWD) modules_install
+	depmod -a
+	modprobe ubbd
+
+uninstall:
+	rm -vf $(DESTDIR)/etc/ld.so.conf.d/ubbd.conf
+	rm -vf $(DESTDIR)/lib/modules/`uname -r`/extra/ubbd.ko
 
 clean:
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
