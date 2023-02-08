@@ -43,13 +43,11 @@ mod:
 	KMODS_SRC=$(PWD) make -C $(KERNEL_TREE) M=$(PWD) modules V=0
 
 install:
-	install etc/ld.so.conf.d/ubbd.conf $(DESTDIR)/etc/ld.so.conf.d/ubbd.conf
 	$(MAKE) -C $(KERNEL_TREE) M=$(PWD) modules_install
 	depmod -a
 	modprobe ubbd
 
 uninstall:
-	rm -vf $(DESTDIR)/etc/ld.so.conf.d/ubbd.conf
 	rm -vf $(DESTDIR)/lib/modules/`uname -r`/extra/ubbd.ko
 clean:
 	rm -rf .tmp_versions Module.markers Module.symvers modules.order
