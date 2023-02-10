@@ -39,6 +39,7 @@ ubbd-y := ubbd_main.o ubbd_req.o ubbd_nl.o ubbd_uio.o ubbd_dev.o ubbd_debugfs.o
 $(obj)/ubbd.o: $(UBBDCONF_HEADER)
 
 mod:
+	git submodule update --init --recursive
 	@rm -rf compat.h
 	KMODS_SRC=$(PWD) make -C $(KERNEL_TREE) M=$(PWD) modules V=0
 
