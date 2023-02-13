@@ -1,6 +1,8 @@
 #include "ubbd_internal.h"
 #include <linux/blkdev.h>
 
+#define UBBD_DEV_OP_TIMEOUT_DEFAULT	30 * HZ
+
 LIST_HEAD(ubbd_dev_list);    /* devices */
 int ubbd_total_devs = 0;
 DEFINE_MUTEX(ubbd_dev_list_mutex);
@@ -187,6 +189,18 @@ static int ubbd_dev_create_queues(struct ubbd_device *ubbd_dev, int num_queues, 
 err:
 	ubbd_dev_destroy_queues(ubbd_dev);
 	return ret;
+}
+
+static void ubbd_dev_state_get_lock(struct ubbd_device *ubbd_dev)
+{
+again:
+	mutex_lock(&ubbd_dev->state_lock);
+	if (ubbd_dev_status_flags_test(ubbd_dev, UBBD_DEV_STATUS_FLAG_INTRANS)) {
+		mutex_unlock(&ubbd_dev->state_lock);
+		goto again;
+	}
+
+	return;
 }
 
 /* ubbd_dev lifecycle */
@@ -500,22 +514,33 @@ static void ubbd_add_disk_fn(struct work_struct *work)
 	struct ubbd_device *ubbd_dev =
 		container_of(work, struct ubbd_device, work);
 	int ret;
+	bool disk_running = false;
 
-	mutex_lock(&ubbd_dev->state_lock);
+	ubbd_dev_state_get_lock(ubbd_dev);
 	if (ubbd_dev->status != UBBD_DEV_KSTATUS_PREPARED) {
-		ret = -EINVAL;
+		mutex_unlock(&ubbd_dev->state_lock);
 		ubbd_dev_err(ubbd_dev, "add_disk_fn expected status is UBBD_DEV_KSTATUS_PREPARED, \
 				but current status is: %d.", ubbd_dev->status);
 		goto out;
 	}
+	ubbd_dev_status_flags_set(ubbd_dev, UBBD_DEV_STATUS_FLAG_INTRANS);
+	mutex_unlock(&ubbd_dev->state_lock);
 
+	blk_queue_rq_timeout(ubbd_dev->disk->queue, UBBD_DEV_OP_TIMEOUT_DEFAULT);
 	ret = ubbd_add_disk(ubbd_dev);
 	if (ret) {
 		ubbd_dev_err(ubbd_dev, "failed to add disk.");
 		goto out;
 	}
-	ubbd_dev->status = UBBD_DEV_KSTATUS_RUNNING;
+	disk_running = true;
+
+	blk_queue_rq_timeout(ubbd_dev->disk->queue, UINT_MAX);
+
 out:
+	mutex_lock(&ubbd_dev->state_lock);
+	ubbd_dev_status_flags_clear(ubbd_dev, UBBD_DEV_STATUS_FLAG_INTRANS);
+	if (disk_running)
+		ubbd_dev->status = UBBD_DEV_KSTATUS_RUNNING;
 	mutex_unlock(&ubbd_dev->state_lock);
 	ubbd_dev_put(ubbd_dev);
 }
@@ -621,7 +646,7 @@ int ubbd_dev_remove_dev(struct ubbd_device *ubbd_dev)
 {
 	int ret = 0;
 
-	mutex_lock(&ubbd_dev->state_lock);
+	ubbd_dev_state_get_lock(ubbd_dev);
 	if (ubbd_dev->status != UBBD_DEV_KSTATUS_REMOVING &&
 			ubbd_dev->status != UBBD_DEV_KSTATUS_PREPARED) {
 		ubbd_dev_err(ubbd_dev, "remove dev is not allowed in current status: %d.",
@@ -839,13 +864,14 @@ void ubbd_dev_remove_disk(struct ubbd_device *ubbd_dev, bool force)
 {
 	bool disk_is_running;
 
-	mutex_lock(&ubbd_dev->state_lock);
+	/* finish inflight requests firstly */
+	ubbd_dev_remove_queues(ubbd_dev, force);
+
+	ubbd_dev_state_get_lock(ubbd_dev);
 	ubbd_dev_debug(ubbd_dev, "remove disk status is: %d, force: %d", ubbd_dev->status, force);
 	disk_is_running = (ubbd_dev->status == UBBD_DEV_KSTATUS_RUNNING);
 	ubbd_dev->status = UBBD_DEV_KSTATUS_REMOVING;
 	mutex_unlock(&ubbd_dev->state_lock);
-
-	ubbd_dev_remove_queues(ubbd_dev, force);
 
 	if (disk_is_running) {
 		del_gendisk(ubbd_dev->disk);

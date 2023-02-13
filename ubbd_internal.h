@@ -121,8 +121,26 @@ struct ubbd_device {
 	struct workqueue_struct	*task_wq;  /* workqueue for request work */
 
 	u8			status;
+	u32			status_flags;
 	struct kref		kref;
 };
+
+#define UBBD_DEV_STATUS_FLAG_INTRANS	1 << 0	/* bit in status_flags for is in state transition */
+
+static inline bool ubbd_dev_status_flags_test(struct ubbd_device *ubbd_dev, u32 bit)
+{
+	return (ubbd_dev->status_flags >> UBBD_DEV_KSTATUS_SHIFT) & bit;
+}
+
+static inline void ubbd_dev_status_flags_set(struct ubbd_device *ubbd_dev, u32 bit)
+{
+	ubbd_dev->status_flags |= (bit << UBBD_DEV_KSTATUS_SHIFT);
+}
+
+static inline void ubbd_dev_status_flags_clear(struct ubbd_device *ubbd_dev, u32 bit)
+{
+	ubbd_dev->status_flags &= ~(bit << UBBD_DEV_KSTATUS_SHIFT);
+}
 
 struct ubbd_dev_add_opts {
 	u32	data_pages;
