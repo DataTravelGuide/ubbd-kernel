@@ -567,6 +567,7 @@ out:
 int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev)
 {
 	int ret;
+	bool disk_readonly = false;
 
 	ubbd_dev->major = ubbd_major;
 	ubbd_dev->minor = ubbd_dev_id_to_minor(ubbd_dev->dev_id);
@@ -576,7 +577,10 @@ int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev)
 		return ret;
 
 	set_capacity(ubbd_dev->disk, ubbd_dev->dev_size / SECTOR_SIZE);
-	set_disk_ro(ubbd_dev->disk, 0);
+
+	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_READONLY)
+		disk_readonly = true;
+	set_disk_ro(ubbd_dev->disk, disk_readonly);
 
 	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITECACHE) {
 		if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_FUA)
