@@ -120,6 +120,10 @@ struct ubbd_device {
 	struct ubbd_queue	*queues;
 	struct workqueue_struct	*task_wq;  /* workqueue for request work */
 
+	u64			dev_size;
+	u64			dev_features;
+	u32			io_timeout;
+
 	u8			status;
 	u32			status_flags;
 	struct kref		kref;
@@ -147,6 +151,7 @@ struct ubbd_dev_add_opts {
 	u64	device_size;
 	u64	dev_features;
 	u32	num_queues;
+	u32	io_timeout;
 };
 
 struct ubbd_dev_config_opts {

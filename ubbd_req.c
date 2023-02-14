@@ -684,11 +684,13 @@ void ubbd_queue_end_inflight_reqs(struct ubbd_queue *ubbd_q, int ret)
 {
 	struct ubbd_request *req;
 
+	mutex_lock(&ubbd_q->req_lock);
 	while (!list_empty(&ubbd_q->inflight_reqs)) {
 		req = list_first_entry(&ubbd_q->inflight_reqs,
 				struct ubbd_request, inflight_reqs_node);
 		complete_inflight_req(ubbd_q, req, ret);
 	}
+	mutex_unlock(&ubbd_q->req_lock);
 }
 
 void ubbd_end_inflight_reqs(struct ubbd_device *ubbd_dev, int ret)

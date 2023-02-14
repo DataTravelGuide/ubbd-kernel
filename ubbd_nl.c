@@ -115,6 +115,7 @@ static struct nla_policy ubbd_dev_opts_attr_policy[UBBD_DEV_OPTS_MAX+1] = {
 	[UBBD_DEV_OPTS_DEV_SIZE]		= { .type = NLA_U64 },
 	[UBBD_DEV_OPTS_DATA_PAGES]		= { .type = NLA_U32 },
 	[UBBD_DEV_OPTS_DEV_QUEUES]		= { .type = NLA_U32 },
+	[UBBD_DEV_OPTS_IO_TIMEOUT]		= { .type = NLA_U32 },
 };
 
 static int handle_cmd_add_dev(struct sk_buff *skb, struct genl_info *info)
@@ -157,6 +158,12 @@ static int handle_cmd_add_dev(struct sk_buff *skb, struct genl_info *info)
 		add_opts.data_pages = nla_get_u32(dev_opts[UBBD_DEV_OPTS_DATA_PAGES]);
 	else
 		add_opts.data_pages = UBBD_UIO_DATA_PAGES;
+
+	if (dev_opts[UBBD_DEV_OPTS_IO_TIMEOUT])
+		add_opts.io_timeout = nla_get_u32(dev_opts[UBBD_DEV_OPTS_IO_TIMEOUT]);
+
+	if (!add_opts.io_timeout)
+		add_opts.io_timeout = UINT_MAX;
 
 	if (ubbd_mgmt_need_fault()) {
 		ret = -ENOMEM;

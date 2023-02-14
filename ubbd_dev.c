@@ -347,7 +347,7 @@ static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 	ubbd_dev->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ubbd_dev->tag_set.nr_hw_queues = ubbd_dev->num_queues;
 	ubbd_dev->tag_set.cmd_size = sizeof(struct ubbd_request);
-	ubbd_dev->tag_set.timeout = UINT_MAX;
+	ubbd_dev->tag_set.timeout = ubbd_dev->io_timeout * HZ;
 	ubbd_dev->tag_set.driver_data = ubbd_dev;
 
 	if (ubbd_mgmt_need_fault()) {
@@ -431,7 +431,7 @@ static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 	ubbd_dev->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
 	ubbd_dev->tag_set.nr_hw_queues = ubbd_dev->num_queues;
 	ubbd_dev->tag_set.cmd_size = sizeof(struct ubbd_request);
-	ubbd_dev->tag_set.timeout = UINT_MAX;
+	ubbd_dev->tag_set.timeout = ubbd_dev->io_timeout * HZ;
 	ubbd_dev->tag_set.driver_data = ubbd_dev;
 
 	if (ubbd_mgmt_need_fault()) {
@@ -534,7 +534,7 @@ static void ubbd_add_disk_fn(struct work_struct *work)
 	}
 	disk_running = true;
 
-	blk_queue_rq_timeout(ubbd_dev->disk->queue, UINT_MAX);
+	blk_queue_rq_timeout(ubbd_dev->disk->queue, ubbd_dev->io_timeout * HZ);
 
 out:
 	mutex_lock(&ubbd_dev->state_lock);
@@ -564,9 +564,7 @@ out:
 	return ret;
 }
 
-int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev,
-			u64 device_size,
-			u64 dev_features)
+int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev)
 {
 	int ret;
 
@@ -577,11 +575,11 @@ int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev,
 	if (ret)
 		return ret;
 
-	set_capacity(ubbd_dev->disk, device_size / SECTOR_SIZE);
+	set_capacity(ubbd_dev->disk, ubbd_dev->dev_size / SECTOR_SIZE);
 	set_disk_ro(ubbd_dev->disk, 0);
 
-	if (dev_features & UBBD_ATTR_FLAGS_ADD_WRITECACHE) {
-		if (dev_features & UBBD_ATTR_FLAGS_ADD_FUA)
+	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITECACHE) {
+		if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_FUA)
 			blk_queue_write_cache(ubbd_dev->disk->queue, true, true);
 		else
 			blk_queue_write_cache(ubbd_dev->disk->queue, true, false);
@@ -589,7 +587,7 @@ int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev,
 		blk_queue_write_cache(ubbd_dev->disk->queue, false, false);
 	}
 
-	if (dev_features & UBBD_ATTR_FLAGS_ADD_DISCARD) {
+	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_DISCARD) {
 #ifdef HVAE_FLAG_DISCARD
 		blk_queue_flag_set(QUEUE_FLAG_DISCARD, ubbd_dev->disk->queue);
 #endif
@@ -597,7 +595,7 @@ int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev,
 		blk_queue_max_discard_sectors(ubbd_dev->disk->queue, 8 * 1024);
 	}
 
-	if (dev_features & UBBD_ATTR_FLAGS_ADD_WRITE_ZEROS) {
+	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITE_ZEROS) {
 		blk_queue_max_write_zeroes_sectors(ubbd_dev->disk->queue, 8 * 1024);
 	}
 
@@ -621,7 +619,11 @@ struct ubbd_device *ubbd_dev_add_dev(struct ubbd_dev_add_opts *add_opts)
 		goto err_dev_put;
 	}
 
-	ret = ubbd_dev_device_setup(ubbd_dev, add_opts->device_size, add_opts->dev_features);
+	ubbd_dev->dev_size = add_opts->device_size;
+	ubbd_dev->dev_features = add_opts->dev_features;
+	ubbd_dev->io_timeout = add_opts->io_timeout;
+
+	ret = ubbd_dev_device_setup(ubbd_dev);
 	if (ret) {
 		ret = -EINVAL;
 		goto err_dev_put;
