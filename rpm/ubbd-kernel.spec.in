@@ -1,0 +1,37 @@
+Name: ubbd-kernel
+Version: @VERSION@
+Release: 0%{?dist}
+Source: ubbd-kernel-%{version}.tar.gz
+Summary: UBBD kernel module
+Group: Applications/System
+License: LGPL
+URL: https://github.com/DataTravelGuide/ubbd
+BuildRequires: make gcc openssl-devel kernel-devel elfutils-libelf-devel
+
+%description
+UBBD kernel module
+
+%prep
+%setup -q
+
+%build
+make mod
+
+%install
+mkdir -p %{buildroot}/lib/modules/@KVER@/extra/
+install src/ubbd.ko %{buildroot}/lib/modules/@KVER@/extra/ubbd.ko
+
+%pre
+
+%post
+
+%files
+%defattr(-,root,root)
+/lib/modules/@KVER@/extra/ubbd.ko
+
+%clean
+rm -rf %_env
+
+%changelog
+* Sat Feb 19 2023 Dongsheng Yang <dongsheng.yang.linux@gmail.com> - 0.1.0-0
+- UBBD kernel module.
