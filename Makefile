@@ -9,6 +9,10 @@ mod:
 install:
 	cd src/; make install
 
+files_install:
+	mkdir -p $(DESTDIR)/lib/modules/$(KERNEL_VERSION)/extra/
+	install src/ubbd.ko $(DESTDIR)/lib/modules/$(KERNEL_VERSION)/extra/ubbd.ko
+
 uninstall:
 	cd src/; make uninstall
 clean:

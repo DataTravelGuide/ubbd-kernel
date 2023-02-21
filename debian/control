@@ -1,0 +1,16 @@
+Source: ubbd-kernel
+Section: admin
+Priority: optional
+Maintainer: Dongsheng Yang <dongsheng.yang.linux@gmail.com>
+
+Package: ubbd-kernel
+Section: admin
+Architecture: amd64
+Homepage: https://github.com/DataTravelGuide/ubbd
+Description: UBBD kernel module
+
+Package: ubbd-kernel-dbg
+Section: debug
+Architecture: amd64
+Homepage: https://github.com/DataTravelGuide/ubbd
+Description: UBBD kernel module debug package

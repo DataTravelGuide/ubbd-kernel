@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+
+CC = $(DEB_HOST_GNU_TYPE)-gcc
+CFLAGS := `dpkg-buildflags --get CFLAGS` -Wall
+LDFLAGS := `dpkg-buildflags --get LDFLAGS`
+CPPFLAGS := `dpkg-buildflags --get CPPFLAGS`
+export DESTDIR=$(CURDIR)/debian/tmp
+
+DEB_VERSION = $(shell dpkg-parsechangelog --show-field Version)
+
+clean:
+	echo clean
+	make clean
+
+build:
+	echo make
+	make mod
+
+override_dh_auto_install:
+	make files_install
+
+.PHONY: override_dh_strip
+override_dh_strip:
+	dh_strip -pubbd-kernel --dbg-package=ubbd-kernel-dbg
+
+override_dh_shlibdeps:
+	echo dep
+
+%:
+	dh $@
