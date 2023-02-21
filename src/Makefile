@@ -2,7 +2,7 @@ COMMIT_REV ?= $(shell git describe  --always --abbrev=12)
 KERNEL_SOURCE_VERSION ?= $(shell uname -r)
 KERNEL_TREE ?= /lib/modules/$(KERNEL_SOURCE_VERSION)/build
 _KBUILD_CFLAGS := $(call flags,KBUILD_CFLAGS)
-CHECK_BUILD := $(CC) $(NOSTDINC_FLAGS) $(KBUILD_CPPFLAGS) $(CPPFLAGS) $(LINUXINCLUDE) $(_KBUILD_CFLAGS) $(CFLAGS_KERNEL) $(EXTRA_CFLAGS) $(CFLAGS) -DKBUILD_BASENAME=\"ubbd\" -Werror -S -o /dev/null -xc 
+CHECK_BUILD := $(CC) $(NOSTDINC_FLAGS) -D__KERNEL__ $(LINUXINCLUDE) $(_KBUILD_CFLAGS) $(CFLAGS_KERNEL) $(EXTRA_CFLAGS)  -DKBUILD_BASENAME=\"ubbd\" -Werror -S -o /dev/null -xc 
 EXTRA_CFLAGS := -g
 EXTRA_CFLAGS += -I$(KERNEL_TREE)
 UBBDCONF_HEADER := $(KMODS_SRC)/compat.h
@@ -40,6 +40,7 @@ $(obj)/ubbd.o: $(UBBDCONF_HEADER)
 
 mod:
 	echo $(EXTRA_CFLAGS)
+	echo $(CHECK_BUILD)
 	@rm -rf compat.h
 	KMODS_SRC=$(PWD) make -C $(KERNEL_TREE) M=$(PWD) modules V=0
 
