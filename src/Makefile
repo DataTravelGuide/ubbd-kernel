@@ -2,7 +2,7 @@ COMMIT_REV ?= $(shell git describe  --always --abbrev=12)
 KERNEL_SOURCE_VERSION ?= $(shell uname -r)
 KERNEL_TREE ?= /lib/modules/$(KERNEL_SOURCE_VERSION)/build
 _KBUILD_CFLAGS := $(call flags,KBUILD_CFLAGS)
-CHECK_BUILD := $(CC) $(NOSTDINC_FLAGS) -D__KERNEL__ $(LINUXINCLUDE) $(_KBUILD_CFLAGS) $(CFLAGS_KERNEL) $(EXTRA_CFLAGS)  -DKBUILD_BASENAME=\"ubbd\" -Werror -S -o /dev/null -xc 
+CHECK_BUILD := $(CC) $(NOSTDINC_FLAGS) -D__KERNEL__ $(LINUXINCLUDE) $(_KBUILD_CFLAGS) $(CFLAGS_KERNEL) $(EXTRA_CFLAGS)  -DKBUILD_BASENAME=\"ubbd\" -Werror -Wno-unused-variable -S -o /dev/null -xc
 EXTRA_CFLAGS := -g
 EXTRA_CFLAGS += -I$(KERNEL_TREE)
 UBBDCONF_HEADER := $(KMODS_SRC)/compat.h
@@ -24,6 +24,7 @@ $(UBBDCONF_HEADER):
 	@echo $(CHECK_BUILD) compat-tests/have_flag_discard.c
 	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_flag_discard.c > /dev/null 2>&1; then echo "#define HAVE_FLAG_DISCARD 1"; else echo "/*#undefined HAVE_FLAG_DISCARD*/"; fi >> $@
 	@>> $@
+	@cat $(UBBDCONF_HEADER)
 
 EXTRA_CFLAGS += -include $(UBBDCONF_HEADER)
 EXTRA_CFLAGS += -freorder-blocks
