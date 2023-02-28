@@ -1,4 +1,4 @@
-ubbd-kernel (0.0.1-0) stable; urgency=medium
+ubbd-kernel (0.0.1-0-@KERNEL_VERSION@) stable; urgency=medium
 
   * New ubbd release
 
