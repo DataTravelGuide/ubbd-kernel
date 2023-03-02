@@ -2,6 +2,7 @@ UBBD_KERNEL_DIR := $(shell pwd)
 VERSION ?= $(shell cat VERSION)
 UBBD_KERNEL_VERSION ?= ubbd-kernel-$(VERSION)
 KERNEL_VERSION := $(shell uname -r)
+DIST_FILES := ubbd-headers Makefile src
 
 mod:
 	cd src; UBBD_HEADER_DIR="$(UBBD_KERNEL_DIR)/ubbd-headers" make mod
@@ -23,6 +24,6 @@ dist:
 	sed "s/@VERSION@/$(VERSION)/g" rpm/ubbd-kernel.spec.in > rpm/ubbd-kernel.spec
 	sed -i 's/@KVER@/$(KERNEL_VERSION)/g' rpm/ubbd-kernel.spec
 	cd /tmp && mkdir -p $(UBBD_KERNEL_VERSION) && \
-	cp -rf $(UBBD_KERNEL_DIR)/{ubbd-headers,Makefile,src} $(UBBD_KERNEL_VERSION) && \
+	for u in $(DIST_FILES); do cp -rf $(UBBD_KERNEL_DIR)/$$u $(UBBD_KERNEL_VERSION); done && \
 	tar --format=posix -chf - $(UBBD_KERNEL_VERSION) | gzip -c > $(UBBD_KERNEL_DIR)/$(UBBD_KERNEL_VERSION).tar.gz && \
 	rm -rf $(UBBD_KERNEL_VERSION)
