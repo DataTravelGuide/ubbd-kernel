@@ -689,15 +689,28 @@ int ubbd_dev_config(struct ubbd_device *ubbd_dev, struct ubbd_dev_config_opts *o
 	if (opts->flags & UBBD_DEV_CONFIG_FLAG_DP_RESERVE) {
 		int i;
 
-		if (opts->config_dp_reserve > 100) {
+		if (opts->dp_reserve > 100) {
 			ret = -EINVAL;
-			ubbd_dev_err(ubbd_dev, "config_dp_reserve is not valide: %u", opts->config_dp_reserve);
+			ubbd_dev_err(ubbd_dev, "dp_reserve is not valide: %u", opts->dp_reserve);
 			goto out;
 		}
 
 		for (i = 0; i < ubbd_dev->num_queues; i++) {
-			ubbd_dev->queues[i].data_pages_reserve_percnt = opts->config_dp_reserve * ubbd_dev->queues[i].data_pages / 100;
+			ubbd_dev->queues[i].data_pages_reserve_percnt = opts->dp_reserve * ubbd_dev->queues[i].data_pages / 100;
 		}
+	}
+
+	if (opts->flags & UBBD_DEV_CONFIG_FLAG_DEV_SIZE) {
+#ifdef HAVE_FLAG_SET_CAP_AND_NOTIFY
+		set_capacity_and_notify(ubbd_dev->disk, opts->dev_size / SECTOR_SIZE);
+#else
+		set_capacity(ubbd_dev->disk, opts->dev_size / SECTOR_SIZE);
+#ifdef HAVE_FLAG_REINVALIDATE_DISK_SIZE
+		revalidate_disk_size(ubbd_dev->disk, true);
+#else
+		revalidate_disk(ubbd_dev->disk);
+#endif /* HAVE_FLAG_REINVALIDATE_DISK_SIZE */
+#endif /* HAVE_FLAG_SET_CAP_AND_NOTIFY */
 	}
 
 out:

@@ -156,10 +156,12 @@ struct ubbd_dev_add_opts {
 
 struct ubbd_dev_config_opts {
 	int	flags;
-	u32	config_dp_reserve;
+	u32	dp_reserve;
+	u64	dev_size;
 };
 
-#define UBBD_DEV_CONFIG_FLAG_DP_RESERVE		1
+#define UBBD_DEV_CONFIG_FLAG_DP_RESERVE		1 << 0
+#define UBBD_DEV_CONFIG_FLAG_DEV_SIZE		1 << 1
 
 extern struct list_head ubbd_dev_list;
 extern int ubbd_total_devs;

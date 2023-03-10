@@ -607,12 +607,17 @@ static int handle_cmd_config(struct sk_buff *skb, struct genl_info *info)
 
 	if (config[UBBD_DEV_OPTS_DP_RESERVE]) {
 		config_opts.flags |= UBBD_DEV_CONFIG_FLAG_DP_RESERVE;
-		config_opts.config_dp_reserve = nla_get_u32(config[UBBD_DEV_OPTS_DP_RESERVE]);
-		if (config_opts.config_dp_reserve > 100) {
+		config_opts.dp_reserve = nla_get_u32(config[UBBD_DEV_OPTS_DP_RESERVE]);
+		if (config_opts.dp_reserve > 100) {
 			ret = -EINVAL;
-			ubbd_dev_err(ubbd_dev, "dp_reserve is not valide: %u", config_opts.config_dp_reserve);
+			ubbd_dev_err(ubbd_dev, "dp_reserve is not valide: %u", config_opts.dp_reserve);
 			goto out_put;
 		}
+	}
+
+	if (config[UBBD_DEV_OPTS_DEV_SIZE]) {
+		config_opts.flags |= UBBD_DEV_CONFIG_FLAG_DEV_SIZE;
+		config_opts.dev_size = nla_get_u64(config[UBBD_DEV_OPTS_DEV_SIZE]);
 	}
 
 	ret = ubbd_dev_config(ubbd_dev, &config_opts);
