@@ -607,10 +607,10 @@ static int handle_cmd_config(struct sk_buff *skb, struct genl_info *info)
 
 	if (config[UBBD_DEV_OPTS_DP_RESERVE]) {
 		config_opts.flags |= UBBD_DEV_CONFIG_FLAG_DP_RESERVE;
-		config_opts.dp_reserve = nla_get_u32(config[UBBD_DEV_OPTS_DP_RESERVE]);
-		if (config_opts.dp_reserve > 100) {
+		config_opts.dp_reserve_percnt = nla_get_u32(config[UBBD_DEV_OPTS_DP_RESERVE]);
+		if (config_opts.dp_reserve_percnt > 100) {
 			ret = -EINVAL;
-			ubbd_dev_err(ubbd_dev, "dp_reserve is not valide: %u", config_opts.dp_reserve);
+			ubbd_dev_err(ubbd_dev, "dp_reserve_percnt is not valide: %u", config_opts.dp_reserve_percnt);
 			goto out_put;
 		}
 	}

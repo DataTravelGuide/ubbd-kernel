@@ -114,7 +114,7 @@ static int ubbd_queue_create(struct ubbd_queue *ubbd_q, u32 data_pages)
 	int ret;
 
 	ubbd_q->data_pages = data_pages;
-	ubbd_q->data_pages_reserve_percnt = \
+	ubbd_q->data_pages_reserved = \
 		ubbd_q->data_pages * UBBD_UIO_DATA_RESERVE_PERCENT / 100;
 
 	if (ubbd_mgmt_need_fault())
@@ -689,14 +689,14 @@ int ubbd_dev_config(struct ubbd_device *ubbd_dev, struct ubbd_dev_config_opts *o
 	if (opts->flags & UBBD_DEV_CONFIG_FLAG_DP_RESERVE) {
 		int i;
 
-		if (opts->dp_reserve > 100) {
+		if (opts->dp_reserve_percnt > 100) {
 			ret = -EINVAL;
-			ubbd_dev_err(ubbd_dev, "dp_reserve is not valide: %u", opts->dp_reserve);
+			ubbd_dev_err(ubbd_dev, "dp_reserve_percnt is not valide: %u", opts->dp_reserve_percnt);
 			goto out;
 		}
 
 		for (i = 0; i < ubbd_dev->num_queues; i++) {
-			ubbd_dev->queues[i].data_pages_reserve_percnt = opts->dp_reserve * ubbd_dev->queues[i].data_pages / 100;
+			ubbd_dev->queues[i].data_pages_reserved = opts->dp_reserve_percnt * ubbd_dev->queues[i].data_pages / 100;
 		}
 	}
 
