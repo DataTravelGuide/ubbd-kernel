@@ -63,7 +63,7 @@ struct ubbd_queue {
 	size_t			data_off;
 	u32			data_pages;
 	u32			data_pages_allocated;
-	u32			data_pages_reserve_percnt;
+	u32			data_pages_reserved;
 	uint32_t		max_blocks;
 	size_t			mmap_pages;
 
@@ -156,10 +156,12 @@ struct ubbd_dev_add_opts {
 
 struct ubbd_dev_config_opts {
 	int	flags;
-	u32	config_dp_reserve;
+	u32	dp_reserve_percnt;
+	u64	dev_size;
 };
 
-#define UBBD_DEV_CONFIG_FLAG_DP_RESERVE		1
+#define UBBD_DEV_CONFIG_FLAG_DP_RESERVE		1 << 0
+#define UBBD_DEV_CONFIG_FLAG_DEV_SIZE		1 << 1
 
 extern struct list_head ubbd_dev_list;
 extern int ubbd_total_devs;

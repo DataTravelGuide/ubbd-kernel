@@ -24,6 +24,10 @@ $(UBBDCONF_HEADER):
 	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_EXT_DEVT.c > /dev/null 2>&1; then echo "#define HAVE_EXT_DEVT 1"; else echo "/*#undefined HAVE_EXT_DEVT*/"; fi >> $@
 	@echo $(CHECK_BUILD) compat-tests/have_flag_discard.c
 	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_flag_discard.c > /dev/null 2>&1; then echo "#define HAVE_FLAG_DISCARD 1"; else echo "/*#undefined HAVE_FLAG_DISCARD*/"; fi >> $@
+	@echo $(CHECK_BUILD) compat-tests/have_set_cap_and_notify.c
+	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_set_cap_and_notify.c > /dev/null 2>&1; then echo "#define HAVE_FLAG_SET_CAP_AND_NOTIFY 1"; else echo "/*#undefined HAVE_FLAG_SET_CAP_AND_NOTIFY*/"; fi >> $@
+	@echo $(CHECK_BUILD) compat-tests/have_revalidate_disk_size.c
+	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_revalidate_disk_size.c > /dev/null 2>&1; then echo "#define HAVE_FLAG_REINVALIDATE_DISK_SIZE 1"; else echo "/*#undefined HAVE_FLAG_REINVALIDATE_DISK_SIZE*/"; fi >> $@
 	@>> $@
 	@cat $(UBBDCONF_HEADER)
 
