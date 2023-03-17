@@ -2,7 +2,7 @@ UBBD_KERNEL_DIR := $(shell pwd)
 VERSION ?= $(shell cat VERSION)
 UBBD_KERNEL_VERSION ?= ubbd-kernel-$(VERSION)
 KERNEL_VERSION := $(shell uname -r)
-DIST_FILES := ubbd-headers Makefile src
+DIST_FILES := ubbd-headers Makefile src VERSION
 
 mod:
 	cd src; UBBD_HEADER_DIR="$(UBBD_KERNEL_DIR)/ubbd-headers" make mod
