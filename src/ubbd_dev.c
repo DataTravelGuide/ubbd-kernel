@@ -592,7 +592,7 @@ int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev)
 	}
 
 	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_DISCARD) {
-#ifdef HVAE_FLAG_DISCARD
+#ifdef HAVE_FLAG_DISCARD
 		blk_queue_flag_set(QUEUE_FLAG_DISCARD, ubbd_dev->disk->queue);
 #endif
 		ubbd_dev->disk->queue->limits.discard_granularity = 4096;
