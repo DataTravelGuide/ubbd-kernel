@@ -1,7 +1,7 @@
 #include "ubbd_internal.h"
 #include <linux/blkdev.h>
 
-#define UBBD_DEV_OP_TIMEOUT_DEFAULT	30 * HZ
+#define UBBD_DEV_OP_TIMEOUT_DEFAULT	UINT_MAX
 
 LIST_HEAD(ubbd_dev_list);    /* devices */
 int ubbd_total_devs = 0;
