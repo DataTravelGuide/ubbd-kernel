@@ -1,4 +1,4 @@
-ubbd-kernel (@VERSION@-0-@KERNEL_VERSION@) stable; urgency=medium
+ubbd-kernel-dkms (@VERSION@-0-@CODENAME@) stable; urgency=medium
 
   * New ubbd release
 

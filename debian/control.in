@@ -1,15 +1,17 @@
-Source: ubbd-kernel
-Section: admin
+Source: ubbd-kernel-dkms
+Section: contrib/kernel
 Priority: optional
 Maintainer: Dongsheng Yang <dongsheng.yang.linux@gmail.com>
+Build-Depends: debhelper, dkms
 
-Package: ubbd-kernel
+Package: ubbd-kernel-dkms
 Section: admin
 Architecture: @ARCH@
 Homepage: https://github.com/DataTravelGuide/ubbd
+Depends: dkms (>= 1.95), ${misc:Depends}
 Description: UBBD kernel module
 
-Package: ubbd-kernel-dbg
+Package: ubbd-kernel-dkms-dbg
 Section: debug
 Architecture: @ARCH@
 Homepage: https://github.com/DataTravelGuide/ubbd

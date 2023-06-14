@@ -7,24 +7,28 @@ CPPFLAGS := `dpkg-buildflags --get CPPFLAGS`
 export DESTDIR=$(CURDIR)/debian/tmp
 
 DEB_VERSION = $(shell dpkg-parsechangelog --show-field Version)
-
-clean:
-	echo clean
-	make clean
-
-build:
-	echo make
-	make mod
-
-override_dh_auto_install:
-	make files_install
-
-.PHONY: override_dh_strip
-override_dh_strip:
-	dh_strip -pubbd-kernel --dbg-package=ubbd-kernel-dbg
-
-override_dh_shlibdeps:
-	echo dep
+VERSION	:= $(shell dpkg-parsechangelog -S Version | sed 's/-.*//' | sed 's/+pristine//')
 
 %:
-	dh $@
+	dh $@ --parallel
+
+override_dh_install:
+	dh_install dkms.conf Makefile ubbd-headers VERSION usr/src/ubbd-kernel-$(VERSION)
+	dh_install src/* usr/src/ubbd-kernel-$(VERSION)/src
+
+override_dh_dkms:
+	dh_dkms -V $(VERSION)
+
+override_dh_fixperms:
+	dh_fixperms
+	find debian/ubbd-kernel-dkms/usr/src -type f -exec chmod -x {} \;
+
+override_dh_builddeb:
+	dh_builddeb -- -Zxz
+
+# Nothing to configure, build or auto-install
+override_dh_auto_configure:
+override_dh_auto_build:
+override_dh_auto_test:
+override_dh_auto_install:
+override_dh_auto_clean:

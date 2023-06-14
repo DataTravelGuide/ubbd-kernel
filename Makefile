@@ -1,8 +1,8 @@
 UBBD_KERNEL_DIR := $(shell pwd)
 VERSION ?= $(shell cat VERSION)
-UBBD_KERNEL_VERSION ?= ubbd-kernel-$(VERSION)
-KERNEL_VERSION := $(shell uname -r)
-DIST_FILES := ubbd-headers Makefile src VERSION
+UBBD_KERNEL_VERSION ?= ubbd-kernel-dkms-$(VERSION)
+KERNEL_VERSION ?= $(shell uname -r)
+DIST_FILES := ubbd-headers Makefile src VERSION install_dep.sh debian rpm dkms.conf.in
 
 mod:
 	cd src; UBBD_HEADER_DIR="$(UBBD_KERNEL_DIR)/ubbd-headers" make mod

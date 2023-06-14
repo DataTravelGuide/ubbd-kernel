@@ -1,0 +1,11 @@
+PACKAGE_NAME="ubbd-kernel"
+PACKAGE_VERSION="@VERSION@"
+PROCS_NUM=`nproc`
+[ $PROCS_NUM -gt 16 ] && PROCS_NUM=16
+MAKE="'make' -j$PROCS_NUM mod"
+CLEAN="'make' clean"
+BUILT_MODULE_NAME[0]="ubbd"
+BUILT_MODULE_LOCATION[0]="src"
+DEST_MODULE_LOCATION[0]="/updates"
+AUTOINSTALL="yes"
+REMAKE_INITRD=no
