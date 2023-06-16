@@ -8,11 +8,11 @@ source /etc/os-release
 case "$ID" in
 debian|ubuntu|devuan|elementary|softiron)
 	echo "ubuntu"
-	apt install -y linux-headers-$(uname -r) debhelper dpkg-dev
+	apt install -y linux-headers-$(uname -r) debhelper dpkg-dev dkms
         ;;
 rocky|centos|fedora|rhel|ol|virtuozzo)
 	echo "centos"
-	yum install -y kernel-devel rpm-build
+	yum install -y kernel-devel rpm-build dkms
         ;;
 *)
         echo "$ID is unknown, dependencies will have to be installed manually."
