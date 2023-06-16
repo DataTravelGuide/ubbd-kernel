@@ -28,6 +28,10 @@ $(UBBDCONF_HEADER):
 	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_set_cap_and_notify.c > /dev/null 2>&1; then echo "#define HAVE_FLAG_SET_CAP_AND_NOTIFY 1"; else echo "/*#undefined HAVE_FLAG_SET_CAP_AND_NOTIFY*/"; fi >> $@
 	@echo $(CHECK_BUILD) compat-tests/have_revalidate_disk_size.c
 	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_revalidate_disk_size.c > /dev/null 2>&1; then echo "#define HAVE_FLAG_REINVALIDATE_DISK_SIZE 1"; else echo "/*#undefined HAVE_FLAG_REINVALIDATE_DISK_SIZE*/"; fi >> $@
+	@echo $(CHECK_BUILD) compat-tests/have_cleanup_disk.c
+	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_cleanup_disk.c > /dev/null 2>&1; then echo "#define HAVE_CLEANUP_DISK 1"; else echo "/*#undefined HAVE_CLEANUP_DISK*/"; fi >> $@
+	@echo $(CHECK_BUILD) compat-tests/have_timeout_reserved.c
+	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_timeout_reserved.c > /dev/null 2>&1; then echo "#define HAVE_TIMEOUT_RESERVED 1"; else echo "/*#undefined HAVE_TIMEOUT_RESERVED*/"; fi >> $@
 	@>> $@
 	@cat $(UBBDCONF_HEADER)
 

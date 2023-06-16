@@ -494,7 +494,11 @@ err:
 
 void ubbd_free_disk(struct ubbd_device *ubbd_dev)
 {
+#ifdef HAVE_CLEANUP_DISK
 	blk_cleanup_disk(ubbd_dev->disk);
+#else
+	put_disk(ubbd_dev->disk);
+#endif /* HAVE_CLEANUP_DISK */
 	blk_mq_free_tag_set(&ubbd_dev->tag_set);
 	ubbd_dev->disk = NULL;
 }

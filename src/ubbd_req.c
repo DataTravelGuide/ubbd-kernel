@@ -702,7 +702,7 @@ void ubbd_end_inflight_reqs(struct ubbd_device *ubbd_dev, int ret)
 	}
 }
 
-enum blk_eh_timer_return ubbd_timeout(struct request *req, bool reserved)
+static enum blk_eh_timer_return __timeout(struct request *req)
 {
 	struct ubbd_request *ubbd_req = blk_mq_rq_to_pdu(req);
 	struct ubbd_queue *ubbd_q = ubbd_req->ubbd_q;
@@ -716,3 +716,16 @@ enum blk_eh_timer_return ubbd_timeout(struct request *req, bool reserved)
 
 	return BLK_EH_DONE;
 }
+
+#ifdef HAVE_TIMEOUT_RESERVED
+enum blk_eh_timer_return ubbd_timeout(struct request *req, bool reserved)
+{
+	return __timeout(req);
+}
+#else
+enum blk_eh_timer_return ubbd_timeout(struct request *req)
+{
+	return __timeout(req);
+}
+
+#endif

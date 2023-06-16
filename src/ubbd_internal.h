@@ -262,7 +262,12 @@ blk_status_t ubbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 		const struct blk_mq_queue_data *bd);
 void ubbd_end_inflight_reqs(struct ubbd_device *ubbd_dev, int ret);
 void ubbd_queue_end_inflight_reqs(struct ubbd_queue *ubbd_q, int ret);
+
+#ifdef HAVE_TIMEOUT_RESERVED
 enum blk_eh_timer_return ubbd_timeout(struct request *req, bool reserved);
+#else
+enum blk_eh_timer_return ubbd_timeout(struct request *req);
+#endif /* HAVE_TIMEOUT_RESERVED */
 struct ubbd_device *ubbd_dev_add_dev(struct ubbd_dev_add_opts *);
 int ubbd_dev_remove_dev(struct ubbd_device *ubbd_dev);
 int ubbd_dev_config(struct ubbd_device *ubbd_dev, struct ubbd_dev_config_opts *opts);
