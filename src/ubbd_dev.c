@@ -139,10 +139,12 @@ static int ubbd_queue_create(struct ubbd_queue *ubbd_q, u32 data_pages)
 		goto err;
 	}
 
-	mutex_init(&ubbd_q->req_lock);
 	mutex_init(&ubbd_q->state_lock);
 	INIT_LIST_HEAD(&ubbd_q->inflight_reqs);
 	spin_lock_init(&ubbd_q->inflight_reqs_lock);
+	spin_lock_init(&ubbd_q->cmdr_lock);
+	spin_lock_init(&ubbd_q->compr_lock);
+	mutex_init(&ubbd_q->pages_mutex);
 	ubbd_q->req_tid = 0;
 	INIT_WORK(&ubbd_q->complete_work, complete_work_fn);
 	cpumask_clear(&ubbd_q->cpumask);
@@ -767,11 +769,11 @@ static int queue_stop(struct ubbd_device *ubbd_dev, struct ubbd_queue *ubbd_q)
 	atomic_set(&ubbd_q->status, UBBD_QUEUE_KSTATUS_STOPPING);
 	flush_workqueue(ubbd_dev->task_wq);
 
-	mutex_lock(&ubbd_q->req_lock);
+	spin_lock(&ubbd_q->inflight_reqs_lock);
 	if (list_empty(&ubbd_q->inflight_reqs)) {
 		atomic_set(&ubbd_q->status, UBBD_QUEUE_KSTATUS_STOPPED);
 	}
-	mutex_unlock(&ubbd_q->req_lock);
+	spin_unlock(&ubbd_q->inflight_reqs_lock);
 
 out:
 	mutex_unlock(&ubbd_q->state_lock);
