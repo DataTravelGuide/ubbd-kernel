@@ -58,13 +58,11 @@ static ssize_t q_req_stats_write(struct file *file, const char __user *ubuf,
 		return -EFAULT;
 
 	if (buffer == 'r' || buffer == 'R') {
-		mutex_lock(&ubbd_q->req_lock);
 		ubbd_q->stats_reqs = 0;
 		ubbd_q->start_to_prepare = ns_to_ktime(0);
 		ubbd_q->start_to_submit = ns_to_ktime(0);
 		ubbd_q->start_to_complete = ns_to_ktime(0);
 		ubbd_q->start_to_release = ns_to_ktime(0);
-		mutex_unlock(&ubbd_q->req_lock);
 	}
 
 	return cnt;

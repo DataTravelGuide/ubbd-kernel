@@ -55,11 +55,14 @@ struct ubbd_queue {
 	struct uio_info		uio_info;
 	struct xarray		data_pages_array;
 	unsigned long		*data_bitmap;
+	struct mutex		pages_mutex;
 
 	struct ubbd_sb		*sb_addr;
 
 	void			*cmdr;
 	void			*compr;
+	spinlock_t		cmdr_lock;
+	spinlock_t		compr_lock;
 	size_t			data_off;
 	u32			data_pages;
 	u32			data_pages_allocated;
@@ -67,7 +70,6 @@ struct ubbd_queue {
 	uint32_t		max_blocks;
 	size_t			mmap_pages;
 
-	struct mutex   		req_lock;
 	struct mutex 		state_lock;
 	unsigned long		flags;
 	atomic_t		status;
@@ -279,6 +281,8 @@ int ubbd_queue_uio_init(struct ubbd_queue *ubbd_q);
 void ubbd_queue_uio_destroy(struct ubbd_queue *ubbd_q);
 void ubbd_uio_unmap_range(struct ubbd_queue *ubbd_q,
 		loff_t const holebegin, loff_t const holelen, int even_cows);
+
+void ubbd_queue_complete(struct ubbd_queue *ubbd_q);
 
 /* debugfs */
 void ubbd_debugfs_add_dev(struct ubbd_device *ubbd_dev);

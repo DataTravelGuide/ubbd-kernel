@@ -79,13 +79,14 @@ static void ubbd_release_page(struct ubbd_queue *ubbd_q,
 	ubbd_dev_debug(ubbd_q->ubbd_dev, "release page: %u, req: %p, bvec_index: %u ",
 			page_index, ubbd_req, bvec_index);
 
+	mutex_lock(&ubbd_q->pages_mutex);
 	clear_bit(page_index, ubbd_q->data_bitmap);
 	if (ubbd_q->data_pages_allocated > ubbd_q->data_pages_reserved) {
 		loff_t off;
 
 		page = xa_load(&ubbd_q->data_pages_array, page_index);
 		if (!page)
-			return;
+			goto out;
 
 		off = ubbd_q->data_off + page_index * 4096;
 		ubbd_uio_unmap_range(ubbd_q, off, 2, 1);
@@ -93,6 +94,8 @@ static void ubbd_release_page(struct ubbd_queue *ubbd_q,
 		xa_erase(&ubbd_q->data_pages_array, page_index);
 		__ubbd_release_page(ubbd_q, page);
 	}
+out:
+	mutex_unlock(&ubbd_q->pages_mutex);
 }
 
 static int ubbd_xa_store_page(struct ubbd_queue *ubbd_q, int page_index,
@@ -107,7 +110,7 @@ static int ubbd_xa_store_page(struct ubbd_queue *ubbd_q, int page_index,
 
 static int ubbd_get_data_pages(struct ubbd_queue *ubbd_q, struct ubbd_request *req)
 {
-	struct page *page;
+	struct page *page, *new_page = NULL;
 	int bvec_index = 0, page_index = 0;
 	struct bio_vec bv;
 	struct bvec_iter iter;
@@ -116,29 +119,42 @@ static int ubbd_get_data_pages(struct ubbd_queue *ubbd_q, struct ubbd_request *r
 
 next_bio:
 	bio_for_each_segment(bv, bio, iter) {
+again:
+		mutex_lock(&ubbd_q->pages_mutex);
 		page_index = find_first_zero_bit(ubbd_q->data_bitmap, ubbd_q->data_pages);
 		if (page_index == ubbd_q->data_pages) {
+			mutex_unlock(&ubbd_q->pages_mutex);
+			ubbd_debug("cant find empty page\b");
 			ret = -ENOMEM;
 			goto out;
 		}
 
 		page = xa_load(&ubbd_q->data_pages_array, page_index);
 		if (!page) {
-			page = ubbd_alloc_page(ubbd_q);
-			if (!page) {
-				ubbd_dev_err(ubbd_q->ubbd_dev, "failed to alloc page.");
-				ret = -ENOMEM;
-				goto out;
-			}
-			ret = ubbd_xa_store_page(ubbd_q, page_index, page);
-			if (ret) {
-				ubbd_dev_err(ubbd_q->ubbd_dev, "xa_store failed.");
-				__ubbd_release_page(ubbd_q, page);
-				goto out;
+			if (new_page) {
+				page = new_page;
+				new_page = NULL;
+				ret = ubbd_xa_store_page(ubbd_q, page_index, page);
+				if (ret) {
+					mutex_unlock(&ubbd_q->pages_mutex);
+					ubbd_dev_err(ubbd_q->ubbd_dev, "xa_store failed.");
+					__ubbd_release_page(ubbd_q, page);
+					goto out;
+				}
+			} else {
+				mutex_unlock(&ubbd_q->pages_mutex);
+				new_page = ubbd_alloc_page(ubbd_q);
+				if (!new_page) {
+					ubbd_dev_err(ubbd_q->ubbd_dev, "failed to alloc page.");
+					ret = -ENOMEM;
+					goto out;
+				}
+				goto again;
 			}
 		}
 
 		set_bit(page_index, ubbd_q->data_bitmap);
+		mutex_unlock(&ubbd_q->pages_mutex);
 		ubbd_req_set_pi(req, bvec_index++, page_index);
 	}
 
@@ -148,12 +164,18 @@ next_bio:
 	}
 
 out:
+	if (new_page) {
+		__ubbd_release_page(ubbd_q, new_page);
+	}
+
+
 	if (ret) {
-		ubbd_dev_err(ubbd_q->ubbd_dev, "ret is %d, bvec_index: %d", ret, bvec_index);
+		ubbd_dev_debug(ubbd_q->ubbd_dev, "ret is %d, bvec_index: %d", ret, bvec_index);
 		while (bvec_index > 0) {
 			ubbd_release_page(ubbd_q, req, --bvec_index);
 		}
 	}
+
 	return ret;
 }
 
@@ -362,17 +384,9 @@ static inline size_t ubbd_get_cmd_size(struct ubbd_request *ubbd_req)
 static int queue_req_prepare(struct ubbd_request *ubbd_req)
 {
 	struct ubbd_queue *ubbd_q = ubbd_req->ubbd_q;
-	size_t command_size;
 	int ret;
 
 	ubbd_req->pi_cnt = ubbd_req_segments(ubbd_req);
-	command_size = ubbd_get_cmd_size(ubbd_req);
-
-	if (!submit_ring_space_enough(ubbd_q, command_size)) {
-		ubbd_dev_debug(ubbd_q->ubbd_dev, "cmd ring space is not enough");
-		ret = -ENOMEM;
-		goto err;
-	}
 
 	if (ubbd_req->pi_cnt > UBBD_REQ_INLINE_PI_MAX) {
 		ret = ubbd_req_pi_alloc(ubbd_req);
@@ -386,13 +400,14 @@ static int queue_req_prepare(struct ubbd_request *ubbd_req)
 	if (ubbd_req->pi_cnt) {
 		ret = ubbd_get_data_pages(ubbd_q, ubbd_req);
 		if (ret) {
-			ubbd_dev_err(ubbd_q->ubbd_dev, "get data page failed");
+			ubbd_dev_debug(ubbd_q->ubbd_dev, "get data page failed");
 			goto err_free_pi;
 		}
 	}
 
-	insert_padding(ubbd_q, command_size);
-	ubbd_req->req_tid = ++ubbd_q->req_tid;
+	if (req_op(ubbd_req->req) == REQ_OP_WRITE) {
+		copy_data_to_ubbdreq(ubbd_req);
+	}
 
 	return 0;
 
@@ -431,10 +446,6 @@ static void queue_req_data_init(struct ubbd_request *ubbd_req)
 	if (ubbd_req->pi_cnt) {
 		ubbd_set_se_iov(ubbd_req);
 	}
-
-	if (req_op(ubbd_req->req) == REQ_OP_WRITE) {
-		copy_data_to_ubbdreq(ubbd_req);
-	}
 }
 
 void ubbd_queue_workfn(struct work_struct *work)
@@ -444,6 +455,7 @@ void ubbd_queue_workfn(struct work_struct *work)
 	struct ubbd_queue *ubbd_q = ubbd_req->ubbd_q;
 	int ret = 0;
 	int status = atomic_read(&ubbd_q->status);
+	size_t command_size;
 
 	if (unlikely(status != UBBD_QUEUE_KSTATUS_RUNNING)) {
 		/*
@@ -460,27 +472,47 @@ void ubbd_queue_workfn(struct work_struct *work)
 		}
 	}
 
-	mutex_lock(&ubbd_q->req_lock);
 	ubbd_req_stats_ktime_delta(ubbd_req->start_to_prepare, ubbd_req->start_kt);
 	ret = queue_req_prepare(ubbd_req);
 	if (ret) {
-		mutex_unlock(&ubbd_q->req_lock);
 		goto end_request;
 	}
+
+	spin_lock(&ubbd_q->inflight_reqs_lock);
+	list_add_tail(&ubbd_req->inflight_reqs_node, &ubbd_q->inflight_reqs);
+	spin_unlock(&ubbd_q->inflight_reqs_lock);
+
+	command_size = ubbd_get_cmd_size(ubbd_req);
+
+	spin_lock(&ubbd_q->cmdr_lock);
+	if (!submit_ring_space_enough(ubbd_q, command_size)) {
+		spin_unlock(&ubbd_q->cmdr_lock);
+
+		/* remove request from inflight_reqs */
+		spin_lock(&ubbd_q->inflight_reqs_lock);
+		list_del_init(&ubbd_req->inflight_reqs_node);
+		spin_unlock(&ubbd_q->inflight_reqs_lock);
+
+		ubbd_dev_debug(ubbd_q->ubbd_dev, "cmd ring space is not enough");
+		ret = -ENOMEM;
+		goto end_request;
+	}
+
+	insert_padding(ubbd_q, command_size);
+	ubbd_req->req_tid = ++ubbd_q->req_tid;
 
 	queue_req_se_init(ubbd_req);
 	queue_req_data_init(ubbd_req);
 
 	/* ubbd_req is ready, submit it to cmd ring */
-	ubbd_req_stats_ktime_delta(ubbd_req->start_to_submit, ubbd_req->start_kt);
-	list_add_tail(&ubbd_req->inflight_reqs_node, &ubbd_q->inflight_reqs);
+	//ubbd_req_stats_ktime_delta(ubbd_req->start_to_submit, ubbd_req->start_kt);
 
 	UPDATE_CMDR_HEAD(ubbd_q->sb_addr->cmd_head,
 			ubbd_get_cmd_size(ubbd_req),
 			ubbd_q->sb_addr->cmdr_size);
+	spin_unlock(&ubbd_q->cmdr_lock);
 
 	ubbd_flush_dcache_range(ubbd_q->sb_addr, sizeof(*ubbd_q->sb_addr));
-	mutex_unlock(&ubbd_q->req_lock);
 
 	uio_event_notify(&ubbd_q->uio_info);
 
@@ -502,6 +534,8 @@ blk_status_t ubbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct request *req = bd->rq;
 	struct ubbd_request *ubbd_req = blk_mq_rq_to_pdu(bd->rq);
 	int status = atomic_read(&ubbd_q->status);
+	//struct ubbd_device *ubbd_dev = ubbd_q->ubbd_dev;
+	//int queue_id = get_random_u32() % ubbd_dev->num_queues;
 
 	if (unlikely(status != UBBD_QUEUE_KSTATUS_RUNNING)) {
 		/*
@@ -515,6 +549,9 @@ blk_status_t ubbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 			return BLK_STS_RESOURCE;
 		}
 	}
+
+
+	//ubbd_q = &ubbd_dev->queues[queue_id];
 
 	memset(ubbd_req, 0, sizeof(struct ubbd_request));
 	INIT_LIST_HEAD(&ubbd_req->inflight_reqs_node);
@@ -544,7 +581,7 @@ blk_status_t ubbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	}
 
 	INIT_WORK(&ubbd_req->work, ubbd_queue_workfn);
-	queue_work_on(raw_smp_processor_id(), ubbd_q->ubbd_dev->task_wq, &ubbd_req->work);
+	queue_work(ubbd_q->ubbd_dev->task_wq, &ubbd_req->work);
 
 	return BLK_STS_OK;
 }
@@ -570,7 +607,7 @@ static void advance_cmd_ring(struct ubbd_queue *ubbd_q)
 
 again:
        se = get_oldest_se(ubbd_q);
-        if (!se)
+       if (!se)
                goto out;
 
 	if (ubbd_se_hdr_flags_test(se, UBBD_SE_HDR_DONE)) {
@@ -622,9 +659,6 @@ static void ubbd_req_stats(struct ubbd_queue *ubbd_q, struct ubbd_request *ubbd_
 
 static void complete_inflight_req(struct ubbd_queue *ubbd_q, struct ubbd_request *ubbd_req, int ret)
 {
-	if (!list_empty(&ubbd_req->inflight_reqs_node)) {
-		list_del_init(&ubbd_req->inflight_reqs_node);
-	}
 	ubbd_se_hdr_flags_set(ubbd_req->se, UBBD_SE_HDR_DONE);
 	ubbd_req_release(ubbd_req);
 
@@ -633,7 +667,54 @@ static void complete_inflight_req(struct ubbd_queue *ubbd_q, struct ubbd_request
 	ubbd_req_stats(ubbd_q, ubbd_req);
 #endif /* UBBD_REQUEST_STATS */
 	blk_mq_end_request(ubbd_req->req, errno_to_blk_status(ret));
+	spin_lock(&ubbd_q->cmdr_lock);
 	advance_cmd_ring(ubbd_q);
+	spin_unlock(&ubbd_q->cmdr_lock);
+}
+
+void ubbd_queue_complete(struct ubbd_queue *ubbd_q)
+{
+	struct ubbd_ce *ce;
+	struct ubbd_request *ubbd_req;
+
+	/*
+	 * If queue is removing, return directly. This would happen
+	 * in force unmapping. inflight request would be ended by unmapping
+	 * */
+	if (atomic_read(&ubbd_q->status) == UBBD_QUEUE_KSTATUS_REMOVING) {
+		ubbd_queue_debug(ubbd_q, "is removing.");
+		return;
+	}
+
+again:
+	spin_lock(&ubbd_q->compr_lock);
+	ubbd_flush_dcache_range(ubbd_q->sb_addr, sizeof(*ubbd_q->sb_addr));
+
+	ce = get_complete_entry(ubbd_q);
+	if (!ce) {
+		spin_unlock(&ubbd_q->compr_lock);
+		return;
+	}
+	UPDATE_COMPR_TAIL(ubbd_q->sb_addr->compr_tail, sizeof(struct ubbd_ce), ubbd_q->sb_addr->compr_size);
+	spin_unlock(&ubbd_q->compr_lock);
+
+	ubbd_flush_dcache_range(ce, sizeof(*ce));
+
+	spin_lock(&ubbd_q->inflight_reqs_lock);
+	ubbd_req = fetch_inflight_req(ubbd_q, ce->priv_data);
+	spin_unlock(&ubbd_q->inflight_reqs_lock);
+	if (!ubbd_req) {
+		goto again;
+	}
+
+	ubbd_req_stats_ktime_delta(ubbd_req->start_to_complete, ubbd_req->start_kt);
+
+	if (req_op(ubbd_req->req) == REQ_OP_READ)
+		copy_data_from_ubbdreq(ubbd_req);
+
+	complete_inflight_req(ubbd_q, ubbd_req, ce->result);
+
+	goto again;
 }
 
 void complete_work_fn(struct work_struct *work)
@@ -652,20 +733,26 @@ void complete_work_fn(struct work_struct *work)
 	}
 
 again:
+	spin_lock(&ubbd_q->compr_lock);
 	ubbd_flush_dcache_range(ubbd_q->sb_addr, sizeof(*ubbd_q->sb_addr));
 
-	mutex_lock(&ubbd_q->req_lock);
 	ce = get_complete_entry(ubbd_q);
 	if (!ce) {
-		mutex_unlock(&ubbd_q->req_lock);
+		spin_unlock(&ubbd_q->compr_lock);
 		return;
 	}
+	UPDATE_COMPR_TAIL(ubbd_q->sb_addr->compr_tail, sizeof(struct ubbd_ce), ubbd_q->sb_addr->compr_size);
+	spin_unlock(&ubbd_q->compr_lock);
 
 	ubbd_flush_dcache_range(ce, sizeof(*ce));
+
+	spin_lock(&ubbd_q->inflight_reqs_lock);
 	ubbd_req = fetch_inflight_req(ubbd_q, ce->priv_data);
+	spin_unlock(&ubbd_q->inflight_reqs_lock);
 	if (!ubbd_req) {
-		goto advance_compr;
+		goto again;
 	}
+
 	ubbd_req_stats_ktime_delta(ubbd_req->start_to_complete, ubbd_req->start_kt);
 
 	if (req_op(ubbd_req->req) == REQ_OP_READ)
@@ -673,24 +760,24 @@ again:
 
 	complete_inflight_req(ubbd_q, ubbd_req, ce->result);
 
-advance_compr:
-	UPDATE_COMPR_TAIL(ubbd_q->sb_addr->compr_tail, sizeof(struct ubbd_ce), ubbd_q->sb_addr->compr_size);
-	mutex_unlock(&ubbd_q->req_lock);
-
 	goto again;
 }
 
 void ubbd_queue_end_inflight_reqs(struct ubbd_queue *ubbd_q, int ret)
 {
+	LIST_HEAD(tmp_list);
 	struct ubbd_request *req;
 
-	mutex_lock(&ubbd_q->req_lock);
-	while (!list_empty(&ubbd_q->inflight_reqs)) {
-		req = list_first_entry(&ubbd_q->inflight_reqs,
+	spin_lock(&ubbd_q->inflight_reqs_lock);
+	list_splice_init(&ubbd_q->inflight_reqs, &tmp_list);
+	spin_unlock(&ubbd_q->inflight_reqs_lock);
+
+	while (!list_empty(&tmp_list)) {
+		req = list_first_entry(&tmp_list,
 				struct ubbd_request, inflight_reqs_node);
+		list_del_init(&req->inflight_reqs_node);
 		complete_inflight_req(ubbd_q, req, ret);
 	}
-	mutex_unlock(&ubbd_q->req_lock);
 }
 
 void ubbd_end_inflight_reqs(struct ubbd_device *ubbd_dev, int ret)

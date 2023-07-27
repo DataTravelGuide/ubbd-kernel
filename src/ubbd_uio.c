@@ -3,14 +3,13 @@
 static int ubbd_irqcontrol(struct uio_info *info, s32 irq_on)
 {
 	struct ubbd_queue *ubbd_q = container_of(info, struct ubbd_queue, uio_info);
-	struct ubbd_device *ubbd_dev = ubbd_q->ubbd_dev;
 
 	if (unlikely(atomic_read(&ubbd_q->status) == UBBD_QUEUE_KSTATUS_REMOVING)) {
 		ubbd_queue_debug(ubbd_q, "is removing. dont queue complete_work.");
 		return 0;
 	}
 
-	queue_work(ubbd_dev->task_wq, &ubbd_q->complete_work);
+	ubbd_queue_complete(ubbd_q);
 
 	return 0;
 }
@@ -110,9 +109,12 @@ static int ubbd_uio_mmap(struct uio_info *info, struct vm_area_struct *vma)
 {
 	struct ubbd_queue *ubbd_q = container_of(info, struct ubbd_queue, uio_info);
 
+#ifdef HAVE_VM_FLAGS_SET
+	vm_flags_set(vma, VM_DONTEXPAND | VM_DONTDUMP);
+#else
 	vma->vm_flags |= VM_DONTEXPAND | VM_DONTDUMP;
+#endif /* HAVE_VM_FLAGS_SET */
 	vma->vm_ops = &ubbd_vm_ops;
-
 	vma->vm_private_data = ubbd_q;
 
 	if (vma_pages(vma) != ubbd_q->mmap_pages)
