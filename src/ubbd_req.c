@@ -124,7 +124,7 @@ again:
 		page_index = find_first_zero_bit(ubbd_q->data_bitmap, ubbd_q->data_pages);
 		if (page_index == ubbd_q->data_pages) {
 			mutex_unlock(&ubbd_q->pages_mutex);
-			ubbd_err("cant find empty page\b");
+			ubbd_debug("cant find empty page\b");
 			ret = -ENOMEM;
 			goto out;
 		}
@@ -170,7 +170,7 @@ out:
 
 
 	if (ret) {
-		ubbd_dev_err(ubbd_q->ubbd_dev, "ret is %d, bvec_index: %d", ret, bvec_index);
+		ubbd_dev_debug(ubbd_q->ubbd_dev, "ret is %d, bvec_index: %d", ret, bvec_index);
 		while (bvec_index > 0) {
 			ubbd_release_page(ubbd_q, req, --bvec_index);
 		}
@@ -400,7 +400,7 @@ static int queue_req_prepare(struct ubbd_request *ubbd_req)
 	if (ubbd_req->pi_cnt) {
 		ret = ubbd_get_data_pages(ubbd_q, ubbd_req);
 		if (ret) {
-			ubbd_dev_err(ubbd_q->ubbd_dev, "get data page failed");
+			ubbd_dev_debug(ubbd_q->ubbd_dev, "get data page failed");
 			goto err_free_pi;
 		}
 	}
