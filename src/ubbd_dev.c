@@ -9,7 +9,7 @@ DEFINE_MUTEX(ubbd_dev_list_mutex);
 
 int ubbd_major;
 struct workqueue_struct *ubbd_wq;
-struct device *ubbd_uio_root_device;
+struct device *ubbd_kring_root_device;
 DEFINE_IDA(ubbd_dev_id_ida);
 
 void ubbd_dev_destroy(struct ubbd_device *ubbd_dev);
@@ -99,7 +99,7 @@ void ubbd_queue_sb_destroy(struct ubbd_queue *ubbd_q)
 static void ubbd_page_release(struct ubbd_queue *ubbd_q);
 static void ubbd_queue_destroy(struct ubbd_queue *ubbd_q)
 {
-	ubbd_queue_uio_destroy(ubbd_q);
+	ubbd_queue_kring_destroy(ubbd_q);
 	ubbd_queue_sb_destroy(ubbd_q);
 
 	if (ubbd_q->data_bitmap) {
@@ -115,7 +115,7 @@ static int ubbd_queue_create(struct ubbd_queue *ubbd_q, u32 data_pages)
 
 	ubbd_q->data_pages = data_pages;
 	ubbd_q->data_pages_reserved = \
-		ubbd_q->data_pages * UBBD_UIO_DATA_RESERVE_PERCENT / 100;
+		ubbd_q->data_pages * UBBD_KRING_DATA_RESERVE_PERCENT / 100;
 
 	if (ubbd_mgmt_need_fault())
 		return -ENOMEM;
@@ -133,9 +133,9 @@ static int ubbd_queue_create(struct ubbd_queue *ubbd_q, u32 data_pages)
 		goto err;
 	}
 
-	ret = ubbd_queue_uio_init(ubbd_q);
+	ret = ubbd_queue_kring_init(ubbd_q);
 	if (ret) {
-		ubbd_dev_err(ubbd_q->ubbd_dev, "failed to init uio: %d.", ret);
+		ubbd_dev_err(ubbd_q->ubbd_dev, "failed to init kring: %d.", ret);
 		goto err;
 	}
 

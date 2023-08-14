@@ -22,7 +22,7 @@ static inline size_t get_queue_msg_size(struct ubbd_queue *ubbd_q)
 	/* size for UBBD_QUEUE_INFO_ITEM */
 	msg_size = nla_attr_size(sizeof(s32));
 
-	/* UIO_ID and UIO_MAP_SIZE and UBBD_QUEUE_INFO_CPU_LIST nest start */
+	/* KRING_ID and KRING_MAP_SIZE and UBBD_QUEUE_INFO_CPU_LIST nest start */
 	msg_size += nla_attr_size(sizeof(s32)) + nla_attr_size(sizeof(u64) + nla_attr_size(sizeof(s32)));
 
 	/* UBBD_QUEUE_INFO_B_PID */
@@ -157,7 +157,7 @@ static int handle_cmd_add_dev(struct sk_buff *skb, struct genl_info *info)
 	if (dev_opts[UBBD_DEV_OPTS_DATA_PAGES])
 		add_opts.data_pages = nla_get_u32(dev_opts[UBBD_DEV_OPTS_DATA_PAGES]);
 	else
-		add_opts.data_pages = UBBD_UIO_DATA_PAGES;
+		add_opts.data_pages = UBBD_KRING_DATA_PAGES;
 
 	if (dev_opts[UBBD_DEV_OPTS_IO_TIMEOUT])
 		add_opts.io_timeout = nla_get_u32(dev_opts[UBBD_DEV_OPTS_IO_TIMEOUT]);
@@ -310,10 +310,10 @@ static int fill_queue_info_item(struct ubbd_queue *ubbd_q, struct sk_buff *reply
 	int c;
 
 	queue_info_item = nla_nest_start(reply_skb, UBBD_QUEUE_INFO_ITEM);
-	if (nla_put_s32(reply_skb, UBBD_QUEUE_INFO_UIO_ID,
-				ubbd_q->uio_info.uio_dev->minor) ||
-		nla_put_u64_64bit(reply_skb, UBBD_QUEUE_INFO_UIO_MAP_SIZE,
-				ubbd_q->uio_info.mem[0].size, UBBD_ATTR_PAD) ||
+	if (nla_put_s32(reply_skb, UBBD_QUEUE_INFO_KRING_ID,
+				ubbd_q->ubbd_kring_info.ubbd_kring_dev->minor) ||
+		nla_put_u64_64bit(reply_skb, UBBD_QUEUE_INFO_KRING_MAP_SIZE,
+				ubbd_q->ubbd_kring_info.mem[0].size, UBBD_ATTR_PAD) ||
 		nla_put_s32(reply_skb, UBBD_QUEUE_INFO_B_PID,
 				ubbd_q->backend_pid) ||
 		nla_put_s32(reply_skb, UBBD_QUEUE_INFO_STATUS,

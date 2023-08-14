@@ -7,7 +7,7 @@
 extern int ubbd_major;
 extern struct workqueue_struct *ubbd_wq;
 extern struct ida ubbd_dev_id_ida;
-extern struct device *ubbd_uio_root_device;
+extern struct device *ubbd_kring_root_device;
 
 static int __init ubbd_init(void)
 {

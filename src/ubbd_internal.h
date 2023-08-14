@@ -14,12 +14,9 @@
 #include <linux/idr.h>
 #include <linux/workqueue.h>
 #include <linux/delay.h>
-#include <linux/uio.h>
 #include <net/genetlink.h>
 
 #include <linux/types.h>
-
-#include <linux/uio_driver.h>
 
 #include "ubbd.h"
 #include "compat.h"
@@ -28,8 +25,8 @@
 #define UBBD_SINGLE_MAJOR_PART_SHIFT 4
 #define UBBD_DRV_NAME "ubbd"
 
-#define UBBD_UIO_DATA_PAGES	(256 * 1024)
-#define UBBD_UIO_DATA_RESERVE_PERCENT	75
+#define UBBD_KRING_DATA_PAGES	(256 * 1024)
+#define UBBD_KRING_DATA_RESERVE_PERCENT	75
 
 /* request stats */
 #ifdef UBBD_REQUEST_STATS
@@ -44,6 +41,110 @@
 
 extern struct workqueue_struct *ubbd_wq;
 
+
+#include <linux/device.h>
+#include <linux/fs.h>
+#include <linux/interrupt.h>
+
+struct module;
+struct ubbd_kring_map;
+
+/**
+ * struct ubbd_kring_mem - description of a KRING memory region
+ * @name:		name of the memory region for identification
+ * @addr:               address of the device's memory rounded to page
+ *			size (phys_addr is used since addr can be
+ *			logical, virtual, or physical & phys_addr_t
+ *			should always be large enough to handle any of
+ *			the address types)
+ * @offs:               offset of device memory within the page
+ * @size:		size of IO (multiple of page size)
+ * @map:		for use by the KRING core only.
+ */
+struct ubbd_kring_mem {
+	const char		*name;
+	phys_addr_t		addr;
+	unsigned long		offs;
+	resource_size_t		size;
+	struct ubbd_kring_map		*map;
+};
+
+#define MAX_KRING_MAPS	5
+
+struct ubbd_kring_device {
+	struct module           *owner;
+	struct device		dev;
+	int                     minor;
+	atomic_t                event;
+	struct fasync_struct    *async_queue;
+	wait_queue_head_t       wait;
+	struct ubbd_kring_info         *info;
+	struct mutex		info_lock;
+	struct kobject          *map_dir;
+};
+
+/**
+ * struct ubbd_kring_info - KRING device capabilities
+ * @ubbd_kring_dev:		the KRING device this info belongs to
+ * @name:		device name
+ * @version:		device driver version
+ * @mem:		list of mappable memory regions, size==0 for end of list
+ * @priv:		optional private data
+ * @handler:		the device's irq handler
+ * @mmap:		mmap operation for this ubbd_kring device
+ * @open:		open operation for this ubbd_kring device
+ * @release:		release operation for this ubbd_kring device
+ * @irqcontrol:		disable/enable irqs when 0/1 is written to /dev/ubbd_kringX
+ */
+struct ubbd_kring_info {
+	struct ubbd_kring_device	*ubbd_kring_dev;
+	const char		*name;
+	const char		*version;
+	struct ubbd_kring_mem		mem[MAX_KRING_MAPS];
+	void			*priv;
+	int (*mmap)(struct ubbd_kring_info *info, struct vm_area_struct *vma);
+	int (*open)(struct ubbd_kring_info *info, struct inode *inode);
+	int (*release)(struct ubbd_kring_info *info, struct inode *inode);
+	int (*irqcontrol)(struct ubbd_kring_info *info, s32 irq_on);
+};
+
+extern int __must_check
+	__ubbd_kring_register_device(struct module *owner,
+			      struct device *parent,
+			      struct ubbd_kring_info *info);
+
+/* use a define to avoid include chaining to get THIS_MODULE */
+
+/**
+ * ubbd_kring_register_device - register a new userspace IO device
+ * @parent:	parent device
+ * @info:	KRING device capabilities
+ *
+ * returns zero on success or a negative error code.
+ */
+#define ubbd_kring_register_device(parent, info) \
+	__ubbd_kring_register_device(THIS_MODULE, parent, info)
+
+extern void ubbd_kring_unregister_device(struct ubbd_kring_info *info);
+extern void ubbd_kring_event_notify(struct ubbd_kring_info *info);
+
+extern int __must_check
+	__devm_ubbd_kring_register_device(struct module *owner,
+				   struct device *parent,
+				   struct ubbd_kring_info *info);
+
+/* use a define to avoid include chaining to get THIS_MODULE */
+
+/**
+ * devm_ubbd_kring_register_device - Resource managed ubbd_kring_register_device()
+ * @parent:	parent device
+ * @info:	KRING device capabilities
+ *
+ * returns zero on success or a negative error code.
+ */
+#define devm_ubbd_kring_register_device(parent, info) \
+	__devm_ubbd_kring_register_device(THIS_MODULE, parent, info)
+
 struct ubbd_queue {
 	struct ubbd_device	*ubbd_dev;
 
@@ -52,7 +153,7 @@ struct ubbd_queue {
 	spinlock_t		inflight_reqs_lock;
 	u64			req_tid;
 
-	struct uio_info		uio_info;
+	struct ubbd_kring_info		ubbd_kring_info;
 	struct xarray		data_pages_array;
 	unsigned long		*data_bitmap;
 	struct mutex		pages_mutex;
@@ -182,7 +283,7 @@ static inline int minor_to_ubbd_dev_id(int minor)
 void ubbd_dev_get(struct ubbd_device *ubbd_dev);
 int ubbd_dev_get_unless_zero(struct ubbd_device *ubbd_dev);
 void ubbd_dev_put(struct ubbd_device *ubbd_dev);
-extern struct device *ubbd_uio_root_device;
+extern struct device *ubbd_kring_root_device;
 static int ubbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct ubbd_device *ubbd_dev = bdev->bd_disk->private_data;
@@ -277,9 +378,9 @@ void ubbd_dev_remove_disk(struct ubbd_device *ubbd_dev, bool force);
 int ubbd_dev_stop_queue(struct ubbd_device *ubbd_dev, int queue_id);
 int ubbd_dev_start_queue(struct ubbd_device *ubbd_dev, int queue_id);
 int ubbd_dev_add_disk(struct ubbd_device *ubbd_dev);
-int ubbd_queue_uio_init(struct ubbd_queue *ubbd_q);
-void ubbd_queue_uio_destroy(struct ubbd_queue *ubbd_q);
-void ubbd_uio_unmap_range(struct ubbd_queue *ubbd_q,
+int ubbd_queue_kring_init(struct ubbd_queue *ubbd_q);
+void ubbd_queue_kring_destroy(struct ubbd_queue *ubbd_q);
+void ubbd_kring_unmap_range(struct ubbd_queue *ubbd_q,
 		loff_t const holebegin, loff_t const holelen, int even_cows);
 
 void ubbd_queue_complete(struct ubbd_queue *ubbd_q);
@@ -354,7 +455,9 @@ static inline bool ubbd_mgmt_need_fault(void)
 extern int ubbd_major;
 extern struct workqueue_struct *ubbd_wq;
 extern struct ida ubbd_dev_id_ida;
-extern struct device *ubbd_uio_root_device;
+extern struct device *ubbd_kring_root_device;
+int ubbd_kring_init(void);
+void ubbd_kring_exit(void);
 
 static inline int __ubbd_init(void)
 {
@@ -377,15 +480,23 @@ static inline int __ubbd_init(void)
 		goto err_out_blkdev;
 	}
 
-	ubbd_uio_root_device = root_device_register("ubbd_uio");
-	if (IS_ERR(ubbd_uio_root_device)) {
-		rc = PTR_ERR(ubbd_uio_root_device);
+	rc = ubbd_kring_init();
+	if (rc < 0) {
 		goto err_out_genl;
+	}
+
+	ubbd_kring_root_device = root_device_register("ubbd_kring");
+	if (IS_ERR(ubbd_kring_root_device)) {
+		rc = PTR_ERR(ubbd_kring_root_device);
+		goto err_exit_kring;
 	}
 
 	ubbd_debugfs_init();
 
 	return 0;
+
+err_exit_kring:
+	ubbd_kring_exit();
 err_out_genl:
 	genl_unregister_family(&ubbd_genl_family);
 err_out_blkdev:
@@ -401,9 +512,10 @@ static inline void __ubbd_exit(void)
 	ubbd_debugfs_cleanup();
 	ida_destroy(&ubbd_dev_id_ida);
 	genl_unregister_family(&ubbd_genl_family);
-	root_device_unregister(ubbd_uio_root_device);
+	root_device_unregister(ubbd_kring_root_device);
 	unregister_blkdev(ubbd_major, UBBD_DRV_NAME);
 	destroy_workqueue(ubbd_wq);
+	ubbd_kring_exit();
 }
 
 #endif /* UBBD_INTERNAL_H */

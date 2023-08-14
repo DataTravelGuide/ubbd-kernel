@@ -4,7 +4,7 @@ KERNEL_VERSION ?= $(shell uname -r)
 KERNEL_TREE ?= /lib/modules/$(KERNEL_VERSION)/build
 _KBUILD_CFLAGS := $(call flags,KBUILD_CFLAGS)
 CHECK_BUILD := $(CC) $(NOSTDINC_FLAGS) -D__KERNEL__ $(LINUXINCLUDE) $(_KBUILD_CFLAGS) $(CFLAGS_KERNEL) $(EXTRA_CFLAGS)  -DKBUILD_BASENAME=\"ubbd\" -Werror -Wno-unused-variable -S -o /dev/null -xc -O3
-EXTRA_CFLAGS := -g
+EXTRA_CFLAGS := -g -O3
 EXTRA_CFLAGS += -I$(KERNEL_TREE)
 UBBDCONF_HEADER := $(KMODS_SRC)/compat.h
 
@@ -47,7 +47,7 @@ EXTRA_CFLAGS += -I$(UBBD_HEADER_DIR) -DCOMMIT_REV="\"$(COMMIT_REV)\""
 EXTRA_CFLAGS += -I$(KERNEL_TREE)/include/ -I$(KERNEL_TREE)/include/linux
 
 obj-m := ubbd.o
-ubbd-y := ubbd_main.o ubbd_req.o ubbd_nl.o ubbd_uio.o ubbd_dev.o ubbd_debugfs.o
+ubbd-y := ubbd_main.o ubbd_req.o ubbd_nl.o ubbd_kring.o ubbd_dev.o ubbd_debugfs.o
 $(obj)/ubbd.o: $(UBBDCONF_HEADER)
 SRC_DIR=$(shell pwd)
 
