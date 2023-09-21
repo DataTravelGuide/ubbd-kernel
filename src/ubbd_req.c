@@ -89,7 +89,7 @@ static void ubbd_release_page(struct ubbd_queue *ubbd_q,
 			goto out;
 
 		off = ubbd_q->data_off + page_index * 4096;
-		ubbd_uio_unmap_range(ubbd_q, off, 2, 1);
+		ubbd_kring_unmap_range(ubbd_q, off, 2, 1);
 
 		xa_erase(&ubbd_q->data_pages_array, page_index);
 		__ubbd_release_page(ubbd_q, page);
@@ -514,7 +514,7 @@ void ubbd_queue_workfn(struct work_struct *work)
 
 	ubbd_flush_dcache_range(ubbd_q->sb_addr, sizeof(*ubbd_q->sb_addr));
 
-	uio_event_notify(&ubbd_q->uio_info);
+	ubbd_kring_event_notify(&ubbd_q->ubbd_kring_info);
 
 	return;
 
