@@ -505,7 +505,9 @@ void ubbd_queue_workfn(struct work_struct *work)
 	queue_req_data_init(ubbd_req);
 
 	/* ubbd_req is ready, submit it to cmd ring */
-	//ubbd_req_stats_ktime_delta(ubbd_req->start_to_submit, ubbd_req->start_kt);
+#ifdef UBBD_REQUEST_STATS
+	ubbd_req_stats_ktime_delta(ubbd_req->start_to_submit, ubbd_req->start_kt);
+#endif
 
 	UPDATE_CMDR_HEAD(ubbd_q->sb_addr->cmd_head,
 			ubbd_get_cmd_size(ubbd_req),
