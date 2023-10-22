@@ -284,10 +284,16 @@ void ubbd_dev_get(struct ubbd_device *ubbd_dev);
 int ubbd_dev_get_unless_zero(struct ubbd_device *ubbd_dev);
 void ubbd_dev_put(struct ubbd_device *ubbd_dev);
 extern struct device *ubbd_kring_root_device;
+
+#ifdef HAVE_BLK_FUNC_WITH_BD
 static int ubbd_open(struct block_device *bdev, fmode_t mode)
 {
 	struct ubbd_device *ubbd_dev = bdev->bd_disk->private_data;
-
+#else
+static int ubbd_open(struct gendisk *disk, blk_mode_t mode)
+{
+	struct ubbd_device *ubbd_dev = disk->private_data;
+#endif
 	ubbd_dev_get(ubbd_dev);
 	spin_lock_irq(&ubbd_dev->lock);
 	ubbd_dev->open_count++;
@@ -296,7 +302,11 @@ static int ubbd_open(struct block_device *bdev, fmode_t mode)
 	return 0;
 }
 
+#ifdef HAVE_BLK_RELEASE_WITHOUT_FLAGS
+static void ubbd_release(struct gendisk *disk)
+#else
 static void ubbd_release(struct gendisk *disk, fmode_t mode)
+#endif /* HAVE_BLK_RELEASE_WITHOUT_FLAGS */
 {
 	struct ubbd_device *ubbd_dev = disk->private_data;
 

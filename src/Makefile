@@ -34,6 +34,10 @@ $(UBBDCONF_HEADER):
 	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_timeout_reserved.c > /dev/null 2>&1; then echo "#define HAVE_TIMEOUT_RESERVED 1"; else echo "/*#undefined HAVE_TIMEOUT_RESERVED*/"; fi >> $@
 	@echo $(CHECK_BUILD) compat-tests/have_vm_flags_set.c
 	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_vm_flags_set.c > /dev/null 2>&1; then echo "#define HAVE_VM_FLAGS_SET 1"; else echo "/*#undefined HAVE_VM_FLAGS_SET*/"; fi >> $@
+	@echo $(CHECK_BUILD) compat-tests/have_blk_release_without_flags.c
+	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_blk_release_without_flags.c > /dev/null 2>&1; then echo "#define HAVE_BLK_RELEASE_WITHOUT_FLAGS 1"; else echo "/*#undefined HAVE_BLK_RELEASE_WITHOUT_FLAGS*/"; fi >> $@
+	@echo $(CHECK_BUILD) compat-tests/have_blk_func_with_blockdevice.c
+	@if $(CHECK_BUILD) $(KMODS_SRC)/compat-tests/have_blk_func_with_blockdevice.c > /dev/null 2>&1; then echo "#define HAVE_BLK_FUNC_WITH_BD 1"; else echo "/*#undefined HAVE_BLK_FUNC_WITH_BD*/"; fi >> $@
 	@>> $@
 	@cat $(UBBDCONF_HEADER)
 

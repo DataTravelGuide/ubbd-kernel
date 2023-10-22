@@ -505,7 +505,9 @@ void ubbd_queue_workfn(struct work_struct *work)
 	queue_req_data_init(ubbd_req);
 
 	/* ubbd_req is ready, submit it to cmd ring */
-	//ubbd_req_stats_ktime_delta(ubbd_req->start_to_submit, ubbd_req->start_kt);
+#ifdef UBBD_REQUEST_STATS
+	ubbd_req_stats_ktime_delta(ubbd_req->start_to_submit, ubbd_req->start_kt);
+#endif
 
 	UPDATE_CMDR_HEAD(ubbd_q->sb_addr->cmd_head,
 			ubbd_get_cmd_size(ubbd_req),
@@ -534,8 +536,6 @@ blk_status_t ubbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 	struct request *req = bd->rq;
 	struct ubbd_request *ubbd_req = blk_mq_rq_to_pdu(bd->rq);
 	int status = atomic_read(&ubbd_q->status);
-	//struct ubbd_device *ubbd_dev = ubbd_q->ubbd_dev;
-	//int queue_id = get_random_u32() % ubbd_dev->num_queues;
 
 	if (unlikely(status != UBBD_QUEUE_KSTATUS_RUNNING)) {
 		/*
@@ -549,9 +549,6 @@ blk_status_t ubbd_queue_rq(struct blk_mq_hw_ctx *hctx,
 			return BLK_STS_RESOURCE;
 		}
 	}
-
-
-	//ubbd_q = &ubbd_dev->queues[queue_id];
 
 	memset(ubbd_req, 0, sizeof(struct ubbd_request));
 	INIT_LIST_HEAD(&ubbd_req->inflight_reqs_node);
