@@ -182,6 +182,7 @@ struct ubbd_queue {
 	struct blk_mq_hw_ctx	*mq_hctx;
 
 	struct dentry		*q_debugfs_d;
+	struct dentry		*q_debugfs_status_f;
 #ifdef	UBBD_REQUEST_STATS
 	struct dentry		*q_debugfs_req_stats_f;
 
