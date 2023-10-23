@@ -18,8 +18,84 @@ static void ubbd_debugfs_remove(struct dentry **dp)
 	*dp = NULL;
 }
 
+static int dev_attr_release(struct inode *inode, struct file *file)
+{
+	struct ubbd_queue *ubbd_q = inode->i_private;
+	struct ubbd_device *ubbd_dev = ubbd_q->ubbd_dev;
+
+	ubbd_dev_put(ubbd_dev);
+	return single_release(inode, file);
+}
+
+#define UBBD_DEBUGFS_OPEN(NAME)								\
+static int ubbd_ ## NAME ## _open(struct inode *inode, struct file *file) 		\
+{											\
+	struct ubbd_queue *ubbd_q = inode->i_private;					\
+	struct ubbd_device *ubbd_dev = ubbd_q->ubbd_dev;				\
+	struct dentry *parent;								\
+	int ret = -ESTALE;								\
+											\
+	/* Are we still linked,								\
+	 * or has debugfs_remove() already been called? */				\
+	parent = file->f_path.dentry->d_parent;						\
+	/* not sure if this can happen: */						\
+	if (!parent || !parent->d_inode)						\
+		goto out;								\
+	/* serialize with d_delete() */							\
+	inode_lock(d_inode(parent));							\
+	/* Make sure the object is still alive */					\
+	if (simple_positive(file->f_path.dentry)					\
+	&& ubbd_dev_get_unless_zero(ubbd_dev))						\
+		ret = 0;								\
+	inode_unlock(d_inode(parent));							\
+	if (!ret) {									\
+		ret = single_open(file, ubbd_ ## NAME ## _show, ubbd_q);		\
+		if (ret)								\
+			ubbd_dev_put(ubbd_dev);						\
+	}										\
+out:											\
+	return ret;									\
+};
+
+#define UBBD_DEBUGFS_RO_FILE(NAME)					\
+UBBD_DEBUGFS_OPEN(NAME)							\
+static const struct file_operations ubbd_ ## NAME ## _fops = {		\
+	.owner		= THIS_MODULE,					\
+	.open		= ubbd_ ## NAME ## _open,			\
+	.read		= seq_read,					\
+	.llseek		= seq_lseek,					\
+	.release	= dev_attr_release,				\
+};
+
+#define UBBD_DEBUGFS_FILE(NAME)						\
+UBBD_DEBUGFS_OPEN(NAME)							\
+static const struct file_operations ubbd_ ## NAME ## _fops = {		\
+	.owner		= THIS_MODULE,					\
+	.open		= ubbd_ ## NAME ## _open,			\
+	.write		= ubbd_ ## NAME ## _write,			\
+	.read		= seq_read,					\
+	.llseek		= seq_lseek,					\
+	.release	= dev_attr_release,				\
+};
+
+static int ubbd_q_status_show(struct seq_file *file, void *ignored)
+{
+	struct ubbd_queue *ubbd_q = file->private;
+
+	seq_printf(file,
+		   "data_pages:			%12u\n"
+		   "data_pages_reserved:	%12d\n"
+		   "data_pages_allocated:	%12d\n",
+		   ubbd_q->data_pages, ubbd_q->data_pages_reserved, ubbd_q->data_pages_allocated);
+	seq_puts(file, "\n");
+
+	return 0;
+}
+
+UBBD_DEBUGFS_RO_FILE(q_status);
+
 #ifdef UBBD_REQUEST_STATS
-static int q_req_stats_show(struct seq_file *file, void *ignored)
+static int ubbd_q_req_stats_show(struct seq_file *file, void *ignored)
 {
 	struct ubbd_queue *ubbd_q = file->private;
 	uint64_t stats_reqs = ubbd_q->stats_reqs;
@@ -48,7 +124,7 @@ static int q_req_stats_show(struct seq_file *file, void *ignored)
 	return 0;
 }
 
-static ssize_t q_req_stats_write(struct file *file, const char __user *ubuf,
+static ssize_t ubbd_q_req_stats_write(struct file *file, const char __user *ubuf,
 				size_t cnt, loff_t *ppos)
 {
 	struct ubbd_queue *ubbd_q = file_inode(file)->i_private;
@@ -68,52 +144,8 @@ static ssize_t q_req_stats_write(struct file *file, const char __user *ubuf,
 	return cnt;
 }
 
-static int q_req_stats_open(struct inode *inode, struct file *file)
-{
-	struct ubbd_queue *ubbd_q = inode->i_private;
-	struct ubbd_device *ubbd_dev = ubbd_q->ubbd_dev;
-	struct dentry *parent;
-	int ret = -ESTALE;
+UBBD_DEBUGFS_FILE(q_req_stats);
 
-	/* Are we still linked,
-	 * or has debugfs_remove() already been called? */
-	parent = file->f_path.dentry->d_parent;
-	/* not sure if this can happen: */
-	if (!parent || !parent->d_inode)
-		goto out;
-	/* serialize with d_delete() */
-	inode_lock(d_inode(parent));
-	/* Make sure the object is still alive */
-	if (simple_positive(file->f_path.dentry)
-	&& ubbd_dev_get_unless_zero(ubbd_dev))
-		ret = 0;
-	inode_unlock(d_inode(parent));
-	if (!ret) {
-		ret = single_open(file, q_req_stats_show, ubbd_q);
-		if (ret)
-			ubbd_dev_put(ubbd_dev);
-	}
-out:
-	return ret;
-}
-
-static int dev_attr_release(struct inode *inode, struct file *file)
-{
-	struct ubbd_queue *ubbd_q = inode->i_private;
-	struct ubbd_device *ubbd_dev = ubbd_q->ubbd_dev;
-
-	ubbd_dev_put(ubbd_dev);
-	return single_release(inode, file);
-}
-
-static const struct file_operations ubbd_q_req_stats_fops = {
-	.owner		= THIS_MODULE,
-	.open		= q_req_stats_open,
-	.write		= q_req_stats_write,
-	.read		= seq_read,
-	.llseek		= seq_lseek,
-	.release	= dev_attr_release,
-};
 #endif /* UBBD_REQUEST_STATS */
 
 void ubbd_debugfs_add_dev(struct ubbd_device *ubbd_dev)
@@ -129,6 +161,8 @@ void ubbd_debugfs_add_dev(struct ubbd_device *ubbd_dev)
 		ubbd_q = &ubbd_dev->queues[i];
 		snprintf(queue_id_buf, sizeof(queue_id_buf), "%u", i);
 		ubbd_q->q_debugfs_d = debugfs_create_dir(queue_id_buf, ubbd_dev->dev_debugfs_queues_d);
+		ubbd_q->q_debugfs_status_f = debugfs_create_file("status", 0600,
+				ubbd_q->q_debugfs_d, ubbd_q, &ubbd_q_status_fops);
 #ifdef UBBD_REQUEST_STATS
 		ubbd_q->q_debugfs_req_stats_f = debugfs_create_file("req_stats", 0600,
 				ubbd_q->q_debugfs_d, ubbd_q, &ubbd_q_req_stats_fops);
@@ -146,6 +180,7 @@ void ubbd_debugfs_remove_dev(struct ubbd_device *ubbd_dev)
 #ifdef UBBD_REQUEST_STATS
 		ubbd_debugfs_remove(&ubbd_q->q_debugfs_req_stats_f);
 #endif /* UBBD_REQUEST_STATS */
+		ubbd_debugfs_remove(&ubbd_q->q_debugfs_status_f);
 		ubbd_debugfs_remove(&ubbd_q->q_debugfs_d);
 	}
 
