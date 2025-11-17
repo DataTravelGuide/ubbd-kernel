@@ -1,7 +1,11 @@
 #include "ubbd_internal.h"
 #include <linux/blkdev.h>
+#include <linux/version.h>
+#include <linux/vmalloc.h>
 
 #define UBBD_DEV_OP_TIMEOUT_DEFAULT	UINT_MAX
+#define UBBD_MAX_DISCARD_SECTORS	(8 * 1024U)
+#define UBBD_MAX_WRITE_ZEROS_SECTORS	(8 * 1024U)
 
 LIST_HEAD(ubbd_dev_list);    /* devices */
 int ubbd_total_devs = 0;
@@ -54,7 +58,7 @@ static const struct blk_mq_ops ubbd_mq_ops = {
 	.init_hctx	= ubbd_init_hctx,
 };
 
-int ubbd_queue_sb_init(struct ubbd_queue *ubbd_q)
+static int ubbd_queue_sb_init(struct ubbd_queue *ubbd_q)
 {
 	struct ubbd_sb *sb;
 
@@ -91,7 +95,7 @@ int ubbd_queue_sb_init(struct ubbd_queue *ubbd_q)
 	return 0;
 }
 
-void ubbd_queue_sb_destroy(struct ubbd_queue *ubbd_q)
+static void ubbd_queue_sb_destroy(struct ubbd_queue *ubbd_q)
 {
 	vfree(ubbd_q->sb_addr);
 }
@@ -248,7 +252,7 @@ static void ubbd_page_release(struct ubbd_queue *ubbd_q)
 	xas_unlock(&xas);
 }
 
-struct ubbd_device *ubbd_dev_create(struct ubbd_dev_add_opts *add_opts)
+static struct ubbd_device *ubbd_dev_create(struct ubbd_dev_add_opts *add_opts)
 {
 	struct ubbd_device *ubbd_dev;
 	int ret;
@@ -260,11 +264,11 @@ struct ubbd_device *ubbd_dev_create(struct ubbd_dev_add_opts *add_opts)
 	if (ubbd_mgmt_need_fault())
 		goto fail_ubbd_dev;
 
-	ubbd_dev->dev_id = ida_simple_get(&ubbd_dev_id_ida, 0,
-					 minor_to_ubbd_dev_id(1 << MINORBITS),
-					 GFP_KERNEL);
-	if (ubbd_dev->dev_id < 0)
-		goto fail_ubbd_dev;
+        ubbd_dev->dev_id = ida_alloc_range(&ubbd_dev_id_ida, 0,
+                                         minor_to_ubbd_dev_id(1 << MINORBITS) - 1,
+                                         GFP_KERNEL);
+        if (ubbd_dev->dev_id < 0)
+                goto fail_ubbd_dev;
 
 	sprintf(ubbd_dev->name, UBBD_DRV_NAME "%d", ubbd_dev->dev_id);
 
@@ -287,7 +291,7 @@ struct ubbd_device *ubbd_dev_create(struct ubbd_dev_add_opts *add_opts)
 err_destroy_queues:
 	ubbd_dev_destroy_queues(ubbd_dev);
 err_remove_id:
-	ida_simple_remove(&ubbd_dev_id_ida, ubbd_dev->dev_id);
+        ida_free(&ubbd_dev_id_ida, ubbd_dev->dev_id);
 fail_ubbd_dev:
 	__ubbd_dev_free(ubbd_dev);
 	return NULL;
@@ -298,7 +302,7 @@ void ubbd_dev_destroy(struct ubbd_device *ubbd_dev)
 	ubbd_debugfs_remove_dev(ubbd_dev);
 	destroy_workqueue(ubbd_dev->task_wq);
 	ubbd_dev_destroy_queues(ubbd_dev);
-	ida_simple_remove(&ubbd_dev_id_ida, ubbd_dev->dev_id);
+        ida_free(&ubbd_dev_id_ida, ubbd_dev->dev_id);
 	__ubbd_dev_free(ubbd_dev);
 	module_put(THIS_MODULE);
 }
@@ -318,9 +322,18 @@ static void ubbd_init_queue_cpumask(struct ubbd_device *ubbd_dev, struct blk_mq_
 #ifdef HAVE_ALLOC_DISK
 static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 {
-	struct gendisk *disk;
-	struct request_queue *q;
-	int err;
+        struct gendisk *disk;
+        struct request_queue *q;
+        int err;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+        struct queue_limits lim = {
+                .max_hw_sectors         = 128,
+                .max_segments           = USHRT_MAX,
+                .max_segment_size       = UINT_MAX,
+                .io_min                 = 4096,
+                .io_opt                 = 4096,
+        };
+#endif
 
         /* create gendisk info */
 	if (ubbd_mgmt_need_fault()) {
@@ -346,7 +359,10 @@ static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 	ubbd_dev->tag_set.ops = &ubbd_mq_ops;
 	ubbd_dev->tag_set.queue_depth = 128;
 	ubbd_dev->tag_set.numa_node = NUMA_NO_NODE;
-	ubbd_dev->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
+        ubbd_dev->tag_set.flags = 0;
+#ifdef BLK_MQ_F_SHOULD_MERGE
+        ubbd_dev->tag_set.flags |= BLK_MQ_F_SHOULD_MERGE;
+#endif
 	ubbd_dev->tag_set.nr_hw_queues = ubbd_dev->num_queues;
 	ubbd_dev->tag_set.cmd_size = sizeof(struct ubbd_request);
 	ubbd_dev->tag_set.timeout = ubbd_dev->io_timeout * HZ;
@@ -374,21 +390,37 @@ static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 
 	ubbd_init_queue_cpumask(ubbd_dev, &ubbd_dev->tag_set);
  
-	blk_queue_flag_set(QUEUE_FLAG_NONROT, q);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+        q->limits.features &= ~BLK_FEAT_ROTATIONAL;
+        q->limits.max_hw_sectors = 128;
+        q->limits.max_sectors = 128;
+        q->limits.max_segments = USHRT_MAX;
+        q->limits.max_segment_size = UINT_MAX;
+        q->limits.io_min = 4096;
+        q->limits.io_opt = 4096;
+        q->limits.discard_granularity = 0;
+        q->limits.max_discard_sectors = 0;
+        q->limits.max_hw_discard_sectors = 0;
+        q->limits.max_write_zeroes_sectors = 0;
+        q->limits.max_hw_wzeroes_unmap_sectors = 0;
+        q->limits.max_wzeroes_unmap_sectors = 0;
+#else
+        blk_queue_flag_set(QUEUE_FLAG_NONROT, q);
 
-	blk_queue_max_hw_sectors(q, 128);
-	q->limits.max_sectors = queue_max_hw_sectors(q);
-	blk_queue_max_segments(q, USHRT_MAX);
-	blk_queue_max_segment_size(q, UINT_MAX);
-	blk_queue_io_min(q, 4096);
-	blk_queue_io_opt(q, 4096);
+        blk_queue_max_hw_sectors(q, 128);
+        q->limits.max_sectors = queue_max_hw_sectors(q);
+        blk_queue_max_segments(q, USHRT_MAX);
+        blk_queue_max_segment_size(q, UINT_MAX);
+        blk_queue_io_min(q, 4096);
+        blk_queue_io_opt(q, 4096);
 
 #ifdef HVAE_FLAG_DISCARD
-	blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
+        blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
 #endif
-	q->limits.discard_granularity = 0;
-	blk_queue_max_discard_sectors(q, 0);
-	blk_queue_max_write_zeroes_sectors(q, 0);
+        q->limits.discard_granularity = 0;
+        blk_queue_max_discard_sectors(q, 0);
+        blk_queue_max_write_zeroes_sectors(q, 0);
+#endif
 
         WARN_ON(!blk_get_queue(q));
         disk->queue = q;
@@ -404,7 +436,7 @@ err_disk:
 	return err;
 }
 
-void ubbd_free_disk(struct ubbd_device *ubbd_dev)
+static void ubbd_free_disk(struct ubbd_device *ubbd_dev)
 {
 	blk_cleanup_queue(ubbd_dev->disk->queue);
 	blk_mq_free_tag_set(&ubbd_dev->tag_set);
@@ -412,7 +444,7 @@ void ubbd_free_disk(struct ubbd_device *ubbd_dev)
 	ubbd_dev->disk = NULL;
 }
 
-int ubbd_add_disk(struct ubbd_device *ubbd_dev)
+static int ubbd_add_disk(struct ubbd_device *ubbd_dev)
 {
 	add_disk(ubbd_dev->disk);
 	blk_put_queue(ubbd_dev->disk->queue);
@@ -422,15 +454,27 @@ int ubbd_add_disk(struct ubbd_device *ubbd_dev)
 #else /* HAVE_ALLOC_DISK */
 static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 {
-	struct gendisk *disk;
-	struct request_queue *q;
-	int err;
+        struct gendisk *disk;
+        struct request_queue *q;
+        int err;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+        struct queue_limits lim = {
+                .max_hw_sectors         = 128,
+                .max_segments           = USHRT_MAX,
+                .max_segment_size       = UINT_MAX,
+                .io_min                 = 4096,
+                .io_opt                 = 4096,
+        };
+#endif
 
-	memset(&ubbd_dev->tag_set, 0, sizeof(ubbd_dev->tag_set));
+        memset(&ubbd_dev->tag_set, 0, sizeof(ubbd_dev->tag_set));
 	ubbd_dev->tag_set.ops = &ubbd_mq_ops;
 	ubbd_dev->tag_set.queue_depth = 128;
 	ubbd_dev->tag_set.numa_node = NUMA_NO_NODE;
-	ubbd_dev->tag_set.flags = BLK_MQ_F_SHOULD_MERGE;
+        ubbd_dev->tag_set.flags = 0;
+#ifdef BLK_MQ_F_SHOULD_MERGE
+        ubbd_dev->tag_set.flags |= BLK_MQ_F_SHOULD_MERGE;
+#endif
 	ubbd_dev->tag_set.nr_hw_queues = ubbd_dev->num_queues;
 	ubbd_dev->tag_set.cmd_size = sizeof(struct ubbd_request);
 	ubbd_dev->tag_set.timeout = ubbd_dev->io_timeout * HZ;
@@ -449,14 +493,18 @@ static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 		err = -ENOMEM;
 		goto out_tag_set;
 	}
-	disk = blk_mq_alloc_disk(&ubbd_dev->tag_set, ubbd_dev);
-	if (IS_ERR(disk)) {
-		err = PTR_ERR(disk);
-		goto out_tag_set;
-	}
-	q = disk->queue;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+        disk = blk_mq_alloc_disk(&ubbd_dev->tag_set, &lim, ubbd_dev);
+#else
+        disk = blk_mq_alloc_disk(&ubbd_dev->tag_set, ubbd_dev);
+#endif
+        if (IS_ERR(disk)) {
+                err = PTR_ERR(disk);
+                goto out_tag_set;
+        }
+        q = disk->queue;
 
-	ubbd_init_queue_cpumask(ubbd_dev, &ubbd_dev->tag_set);
+        ubbd_init_queue_cpumask(ubbd_dev, &ubbd_dev->tag_set);
 
         snprintf(disk->disk_name, sizeof(disk->disk_name), UBBD_DRV_NAME "%d",
                  ubbd_dev->dev_id);
@@ -469,21 +517,37 @@ static int ubbd_init_disk(struct ubbd_device *ubbd_dev)
 	disk->fops = &ubbd_bd_ops;
 	disk->private_data = ubbd_dev;
  
-	blk_queue_flag_set(QUEUE_FLAG_NONROT, q);
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+        q->limits.features &= ~BLK_FEAT_ROTATIONAL;
+        q->limits.max_hw_sectors = 128;
+        q->limits.max_sectors = 128;
+        q->limits.max_segments = USHRT_MAX;
+        q->limits.max_segment_size = UINT_MAX;
+        q->limits.io_min = 4096;
+        q->limits.io_opt = 4096;
+        q->limits.discard_granularity = 0;
+        q->limits.max_discard_sectors = 0;
+        q->limits.max_hw_discard_sectors = 0;
+        q->limits.max_write_zeroes_sectors = 0;
+        q->limits.max_hw_wzeroes_unmap_sectors = 0;
+        q->limits.max_wzeroes_unmap_sectors = 0;
+#else
+        blk_queue_flag_set(QUEUE_FLAG_NONROT, q);
 
-	blk_queue_max_hw_sectors(q, 128);
-	q->limits.max_sectors = queue_max_hw_sectors(q);
-	blk_queue_max_segments(q, USHRT_MAX);
-	blk_queue_max_segment_size(q, UINT_MAX);
-	blk_queue_io_min(q, 4096);
-	blk_queue_io_opt(q, 4096);
+        blk_queue_max_hw_sectors(q, 128);
+        q->limits.max_sectors = queue_max_hw_sectors(q);
+        blk_queue_max_segments(q, USHRT_MAX);
+        blk_queue_max_segment_size(q, UINT_MAX);
+        blk_queue_io_min(q, 4096);
+        blk_queue_io_opt(q, 4096);
 
 #ifdef HVAE_FLAG_DISCARD
-	blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
+        blk_queue_flag_clear(QUEUE_FLAG_DISCARD, q);
 #endif
-	q->limits.discard_granularity = 0;
-	blk_queue_max_discard_sectors(q, 0);
-	blk_queue_max_write_zeroes_sectors(q, 0);
+        q->limits.discard_granularity = 0;
+        blk_queue_max_discard_sectors(q, 0);
+        blk_queue_max_write_zeroes_sectors(q, 0);
+#endif
 
 	ubbd_dev->disk = disk;
 
@@ -494,7 +558,7 @@ err:
 	return err;
 }
 
-void ubbd_free_disk(struct ubbd_device *ubbd_dev)
+static void ubbd_free_disk(struct ubbd_device *ubbd_dev)
 {
 #ifdef HAVE_CLEANUP_DISK
 	blk_cleanup_disk(ubbd_dev->disk);
@@ -505,7 +569,7 @@ void ubbd_free_disk(struct ubbd_device *ubbd_dev)
 	ubbd_dev->disk = NULL;
 }
 
-int ubbd_add_disk(struct ubbd_device *ubbd_dev)
+static int ubbd_add_disk(struct ubbd_device *ubbd_dev)
 {
 	int ret;
 
@@ -570,10 +634,13 @@ out:
 	return ret;
 }
 
-int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev)
+static int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev)
 {
-	int ret;
-	bool disk_readonly = false;
+        int ret = 0;
+        bool disk_readonly = false;
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+        struct queue_limits lim;
+#endif
 
 	ubbd_dev->major = ubbd_major;
 	ubbd_dev->minor = ubbd_dev_id_to_minor(ubbd_dev->dev_id);
@@ -588,28 +655,69 @@ int ubbd_dev_device_setup(struct ubbd_device *ubbd_dev)
 		disk_readonly = true;
 	set_disk_ro(ubbd_dev->disk, disk_readonly);
 
-	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITECACHE) {
-		if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_FUA)
-			blk_queue_write_cache(ubbd_dev->disk->queue, true, true);
-		else
-			blk_queue_write_cache(ubbd_dev->disk->queue, true, false);
-	} else {
-		blk_queue_write_cache(ubbd_dev->disk->queue, false, false);
-	}
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+        lim = queue_limits_start_update(ubbd_dev->disk->queue);
+        lim.features &= ~BLK_FEAT_ROTATIONAL;
 
-	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_DISCARD) {
+        if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITECACHE) {
+                lim.features |= BLK_FEAT_WRITE_CACHE;
+                if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_FUA)
+                        lim.features |= BLK_FEAT_FUA;
+                else
+                        lim.features &= ~BLK_FEAT_FUA;
+        } else {
+                lim.features &= ~(BLK_FEAT_WRITE_CACHE | BLK_FEAT_FUA);
+        }
+
+        if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_DISCARD) {
+                lim.discard_granularity = 4096;
+                lim.max_hw_discard_sectors = UBBD_MAX_DISCARD_SECTORS;
+                lim.max_discard_sectors = UBBD_MAX_DISCARD_SECTORS;
+                lim.max_user_discard_sectors = UBBD_MAX_DISCARD_SECTORS;
+                lim.max_discard_segments = 1;
+        } else {
+                lim.discard_granularity = 0;
+                lim.max_hw_discard_sectors = 0;
+                lim.max_discard_sectors = 0;
+                lim.max_user_discard_sectors = 0;
+                lim.max_discard_segments = 0;
+        }
+
+        if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITE_ZEROS) {
+                lim.max_write_zeroes_sectors = UBBD_MAX_WRITE_ZEROS_SECTORS;
+                lim.max_hw_wzeroes_unmap_sectors = UBBD_MAX_WRITE_ZEROS_SECTORS;
+                lim.max_wzeroes_unmap_sectors = UBBD_MAX_WRITE_ZEROS_SECTORS;
+        } else {
+                lim.max_write_zeroes_sectors = 0;
+                lim.max_hw_wzeroes_unmap_sectors = 0;
+                lim.max_wzeroes_unmap_sectors = 0;
+        }
+
+        ret = queue_limits_commit_update_frozen(ubbd_dev->disk->queue, &lim);
+#else
+        if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITECACHE) {
+                if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_FUA)
+                        blk_queue_write_cache(ubbd_dev->disk->queue, true, true);
+                else
+                        blk_queue_write_cache(ubbd_dev->disk->queue, true, false);
+        } else {
+                blk_queue_write_cache(ubbd_dev->disk->queue, false, false);
+        }
+
+        if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_DISCARD) {
 #ifdef HAVE_FLAG_DISCARD
-		blk_queue_flag_set(QUEUE_FLAG_DISCARD, ubbd_dev->disk->queue);
+                blk_queue_flag_set(QUEUE_FLAG_DISCARD, ubbd_dev->disk->queue);
 #endif
-		ubbd_dev->disk->queue->limits.discard_granularity = 4096;
-		blk_queue_max_discard_sectors(ubbd_dev->disk->queue, 8 * 1024);
-	}
+                ubbd_dev->disk->queue->limits.discard_granularity = 4096;
+                blk_queue_max_discard_sectors(ubbd_dev->disk->queue, UBBD_MAX_DISCARD_SECTORS);
+        }
 
-	if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITE_ZEROS) {
-		blk_queue_max_write_zeroes_sectors(ubbd_dev->disk->queue, 8 * 1024);
-	}
+        if (ubbd_dev->dev_features & UBBD_ATTR_FLAGS_ADD_WRITE_ZEROS) {
+                blk_queue_max_write_zeroes_sectors(ubbd_dev->disk->queue, UBBD_MAX_WRITE_ZEROS_SECTORS);
+        }
+#endif
 
-	return 0;
+        return ret;
 }
 
 
