@@ -1,7 +1,7 @@
 #include "ubbd_internal.h"
 #include <linux/delay.h>
 
-struct ubbd_se *get_submit_entry(struct ubbd_queue *ubbd_q)
+static struct ubbd_se *get_submit_entry(struct ubbd_queue *ubbd_q)
 {
 	struct ubbd_se *se;
 
@@ -11,7 +11,7 @@ struct ubbd_se *get_submit_entry(struct ubbd_queue *ubbd_q)
 	return se;
 }
 
-struct ubbd_se *get_oldest_se(struct ubbd_queue *ubbd_q)
+static struct ubbd_se *get_oldest_se(struct ubbd_queue *ubbd_q)
 {
 	if (ubbd_q->sb_addr->cmd_tail == ubbd_q->sb_addr->cmd_head)
 		return NULL;
@@ -20,7 +20,7 @@ struct ubbd_se *get_oldest_se(struct ubbd_queue *ubbd_q)
 	return (struct ubbd_se *)(ubbd_q->cmdr + ubbd_q->sb_addr->cmd_tail);
 }
 
-struct ubbd_ce *get_complete_entry(struct ubbd_queue *ubbd_q)
+static struct ubbd_ce *get_complete_entry(struct ubbd_queue *ubbd_q)
 {
 	if (ubbd_q->sb_addr->compr_tail == ubbd_q->sb_addr->compr_head)
 		return NULL;
@@ -353,7 +353,7 @@ static void insert_padding(struct ubbd_queue *ubbd_q, u32 cmd_size)
 	UPDATE_CMDR_HEAD(ubbd_q->sb_addr->cmd_head, pad_len, ubbd_q->sb_addr->cmdr_size);
 }
 
-void ubbd_req_init(struct ubbd_queue *ubbd_q, enum ubbd_op op, struct request *rq)
+static void ubbd_req_init(struct ubbd_queue *ubbd_q, enum ubbd_op op, struct request *rq)
 {
 	struct ubbd_request *ubbd_req = blk_mq_rq_to_pdu(rq);
 
@@ -448,7 +448,7 @@ static void queue_req_data_init(struct ubbd_request *ubbd_req)
 	}
 }
 
-void ubbd_queue_workfn(struct work_struct *work)
+static void ubbd_queue_workfn(struct work_struct *work)
 {
 	struct ubbd_request *ubbd_req =
 		container_of(work, struct ubbd_request, work);
