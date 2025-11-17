@@ -54,6 +54,7 @@ obj-m := ubbd.o
 ubbd-y := ubbd_main.o ubbd_req.o ubbd_nl.o ubbd_kring.o ubbd_dev.o ubbd_debugfs.o
 $(obj)/ubbd.o: $(UBBDCONF_HEADER)
 SRC_DIR=$(shell pwd)
+ccflags-y += $(EXTRA_CFLAGS)
 
 mod:
 	echo $(EXTRA_CFLAGS)
